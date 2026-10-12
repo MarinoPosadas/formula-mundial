@@ -1,0 +1,52 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 20005e4d9a2bda24eaa91be287e58903, type: 3}
+  m_Name: Catalogo
+  m_EditorClassIdentifier: F1.Juego::F1.Juego.CatalogoDecorado
+  garaje: {fileID: -927199367670048503, guid: 6b6ac72b7f644764294f58aff46c692d, type: 3}
+  oficinaBoxes: {fileID: -927199367670048503, guid: 9314f063ac8537941954e96069f2e045, type: 3}
+  gradaCubierta: {fileID: -927199367670048503, guid: c7724b67d5a6272469e8c904cffafd5c, type: 3}
+  grada: {fileID: -927199367670048503, guid: 6168d31a0a088ec4a9dd371d0b73af9a, type: 3}
+  porticoSalida: {fileID: -927199367670048503, guid: 5a001943acc46844396432dc4ad028bf, type: 3}
+  valla: {fileID: -927199367670048503, guid: 2c46d4b22d476d049825ff23a811fa2b, type: 3}
+  vallaBaja: {fileID: -927199367670048503, guid: d39fb8c921ceef14bb00a72f6daa92b0, type: 3}
+  torreRoja: {fileID: -927199367670048503, guid: 1c698e076eabab4409cefc63ce358ad9, type: 3}
+  torreVerde: {fileID: -927199367670048503, guid: 0b89c32017c9ea74182acc31b96d030a, type: 3}
+  farolaCircuito: {fileID: -927199367670048503, guid: 060573c2315952a47ac6ae88bac085ad, type: 3}
+  banderaCuadros: {fileID: -927199367670048503, guid: 9754ad42859cda3479712200581fbb2c, type: 3}
+  arbolGrande: {fileID: -927199367670048503, guid: 83e418ea18b4f99489b83bbbd2d0163f, type: 3}
+  arbolPequeno: {fileID: -927199367670048503, guid: 64190aed95de8bc48aeed31299159841, type: 3}
+  carpa: {fileID: -927199367670048503, guid: 3feb671e8a2b52d48a3932eafa63d5d2, type: 3}
+  edificios:
+  - {fileID: 919132149155446097, guid: 3a96805d85337284aadc96d3ca95a608, type: 3}
+  - {fileID: 919132149155446097, guid: e91b4b9962b7d4b48a43b272d3babe24, type: 3}
+  - {fileID: 919132149155446097, guid: 31b7d586f92ff5041bbdea7bdbfbcce2, type: 3}
+  - {fileID: 919132149155446097, guid: 8d24b871533e4fb449ef18e6df769b46, type: 3}
+  - {fileID: 919132149155446097, guid: db2dbe37701b5604988e4eed762d5eb1, type: 3}
+  - {fileID: 919132149155446097, guid: 6019b476cded792498068471b9a5d519, type: 3}
+  - {fileID: 919132149155446097, guid: 84a74df5be479b246a622205c3dc390e, type: 3}
+  - {fileID: 919132149155446097, guid: b662ebacd585ca74caba3124aed38323, type: 3}
+  - {fileID: 919132149155446097, guid: 5a811b4d36ae81a439b84690ffadfc6d, type: 3}
+  - {fileID: 919132149155446097, guid: 5b54730747562784791d4c7f27e788b0, type: 3}
+  - {fileID: 919132149155446097, guid: 37ea616afa840dd41a1f9f9eda2e18f5, type: 3}
+  - {fileID: 919132149155446097, guid: c7a7f3b989121394da941bf28aa1c745, type: 3}
+  - {fileID: 919132149155446097, guid: fe7b5e9f5399ce44abad941544b6c7c3, type: 3}
+  - {fileID: 919132149155446097, guid: 8806e4864f271e742877dccca8591524, type: 3}
+  - {fileID: 919132149155446097, guid: eb476a7f40afdf94d902f829473054c8, type: 3}
+  - {fileID: 919132149155446097, guid: 58662789eb1b93748ad0b7a353dea57a, type: 3}
+  - {fileID: 919132149155446097, guid: bd7f651d57cdd8e46952aa554a09eba9, type: 3}
+  - {fileID: 919132149155446097, guid: 42f20aaeaa575444b9685b92b9fbe1e3, type: 3}
+  - {fileID: 919132149155446097, guid: 8332d228a860b8e4681dc571a2f7a590, type: 3}
+  farolaCalle: {fileID: -927199367670048503, guid: d968fb0553af69440bc0f77290950967, type: 3}
+  giroKenney: 180
+  giroEdificios: 0
+  giroFarolaCalle: 180

@@ -1,0 +1,38 @@
+# ── Lo que Unity e IDE regeneran solos ───────────────────────────────────
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+UserSettings/
+MemoryCaptures/
+Recordings/
+.vs/
+.utmp/
+
+*.csproj
+*.sln
+*.slnx
+*.user
+*.pidb
+*.booproj
+*.svd
+*.pdb
+
+# Escenas que Unity rescata tras un cierre inesperado: salvavidas local.
+Assets/_Recovery/
+Assets/_Recovery.meta
+
+# ── Copias de seguridad de Blender ───────────────────────────────────────
+# El .blend1 es la versión anterior que Blender guarda al lado del .blend.
+# El bueno es el .blend, y ese sí entra (por LFS).
+*.blend1
+*.blend1.meta
+
+# ── Archivos comprimidos ─────────────────────────────────────────────────
+# NUNCA: en Olimpiadas los ZIP de animaciones sumaron 1,86 GB y hubo que
+# reescribir la historia entera para poder subir nada.
+*.zip
+*.7z
+*.rar

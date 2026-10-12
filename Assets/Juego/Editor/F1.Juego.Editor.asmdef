@@ -1,0 +1,19 @@
+{
+    "name": "F1.Juego.Editor",
+    "rootNamespace": "F1.Juego.Editor",
+    "references": [
+        "F1.Juego",
+        "F1.Nucleo"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

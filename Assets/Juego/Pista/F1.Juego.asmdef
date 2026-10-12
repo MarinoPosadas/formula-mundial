@@ -1,0 +1,16 @@
+{
+    "name": "F1.Juego",
+    "rootNamespace": "F1.Juego",
+    "references": [
+        "F1.Nucleo"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

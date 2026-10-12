@@ -1,0 +1,156 @@
+{
+ "ae-2009": {
+  "plano": "abu-dhabi",
+  "salida_m": 5138.4,
+  "sentido": 1,
+  "error_px": 1.08,
+  "longitud": 5281
+ },
+ "au-1953": {
+  "plano": "australia",
+  "salida_m": 43.9,
+  "sentido": 1,
+  "error_px": 0.92,
+  "longitud": 5278
+ },
+ "at-1969": {
+  "plano": "austria",
+  "salida_m": 0.0,
+  "sentido": 1,
+  "error_px": 0.9,
+  "longitud": 4318
+ },
+ "az-2016": {
+  "plano": "azerbaiyan",
+  "salida_m": 0.0,
+  "sentido": 1,
+  "error_px": 0.94,
+  "longitud": 6003
+ },
+ "es-1991": {
+  "plano": "barcelona-catalunya",
+  "salida_m": 19.4,
+  "sentido": 1,
+  "error_px": 0.94,
+  "longitud": 4655
+ },
+ "be-1925": {
+  "plano": "belgica",
+  "salida_m": 6920.2,
+  "sentido": 1,
+  "error_px": 0.91,
+  "longitud": 7004
+ },
+ "br-1940": {
+  "plano": "brasil",
+  "salida_m": 17.9,
+  "sentido": 1,
+  "error_px": 1.09,
+  "longitud": 4309
+ },
+ "ca-1978": {
+  "plano": "canada",
+  "salida_m": 127.3,
+  "sentido": 1,
+  "error_px": 0.95,
+  "longitud": 4361
+ },
+ "cn-2004": {
+  "plano": "china",
+  "salida_m": 5220.9,
+  "sentido": 1,
+  "error_px": 1.0,
+  "longitud": 5451
+ },
+ "us-2012": {
+  "plano": "eeuu",
+  "salida_m": 5266.7,
+  "sentido": 1,
+  "error_px": 0.9,
+  "longitud": 5514
+ },
+ "es-2026": {
+  "plano": "espana",
+  "salida_m": 45.3,
+  "sentido": 1,
+  "error_px": 0.97,
+  "longitud": 5474
+ },
+ "gb-1948": {
+  "plano": "gran-bretana",
+  "salida_m": 3085.9,
+  "sentido": 1,
+  "error_px": 0.9,
+  "longitud": 5891
+ },
+ "hu-1986": {
+  "plano": "hungria",
+  "salida_m": 4139.0,
+  "sentido": 1,
+  "error_px": 0.9,
+  "longitud": 4381
+ },
+ "it-1922": {
+  "plano": "italia",
+  "salida_m": 5641.9,
+  "sentido": 1,
+  "error_px": 0.81,
+  "longitud": 5793
+ },
+ "jp-1962": {
+  "plano": "japon",
+  "salida_m": 96.9,
+  "sentido": 1,
+  "error_px": 0.91,
+  "longitud": 5807
+ },
+ "us-2023": {
+  "plano": "las-vegas",
+  "salida_m": 6065.1,
+  "sentido": 1,
+  "error_px": 1.61,
+  "longitud": 6201
+ },
+ "mx-1962": {
+  "plano": "mexico",
+  "salida_m": 233.0,
+  "sentido": 1,
+  "error_px": 3.4,
+  "longitud": 4304
+ },
+ "us-2022": {
+  "plano": "miami",
+  "salida_m": 0.0,
+  "sentido": 1,
+  "error_px": 0.9,
+  "longitud": 5412
+ },
+ "mc-1929": {
+  "plano": "monaco",
+  "salida_m": 2396.2,
+  "sentido": 1,
+  "error_px": 0.9,
+  "longitud": 3337
+ },
+ "nl-1948": {
+  "plano": "paises-bajos",
+  "salida_m": 70.9,
+  "sentido": 1,
+  "error_px": 0.87,
+  "longitud": 4259
+ },
+ "qa-2004": {
+  "plano": "qatar",
+  "salida_m": 5398.1,
+  "sentido": 1,
+  "error_px": 0.92,
+  "longitud": 5380
+ },
+ "sg-2008": {
+  "plano": "singapur",
+  "salida_m": 123.6,
+  "sentido": -1,
+  "error_px": 1.69,
+  "longitud": 4928
+ }
+}

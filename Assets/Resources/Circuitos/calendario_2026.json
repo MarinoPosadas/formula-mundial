@@ -1,0 +1,149 @@
+{
+ "temporada": 2026,
+ "carreras": [
+  {
+   "ronda": 1,
+   "circuito": "au-1953",
+   "granPremio": "Gran Premio de Australia",
+   "fecha": "2026-03-08"
+  },
+  {
+   "ronda": 2,
+   "circuito": "cn-2004",
+   "granPremio": "Gran Premio de China",
+   "fecha": "2026-03-15"
+  },
+  {
+   "ronda": 3,
+   "circuito": "jp-1962",
+   "granPremio": "Gran Premio de Japón",
+   "fecha": "2026-03-29"
+  },
+  {
+   "ronda": 4,
+   "circuito": "bh-2002",
+   "granPremio": "Gran Premio de Baréin",
+   "fecha": "2026-04-12"
+  },
+  {
+   "ronda": 5,
+   "circuito": "sa-2021",
+   "granPremio": "Gran Premio de Arabia Saudí",
+   "fecha": "2026-04-19"
+  },
+  {
+   "ronda": 6,
+   "circuito": "us-2022",
+   "granPremio": "Gran Premio de Miami",
+   "fecha": "2026-05-03"
+  },
+  {
+   "ronda": 7,
+   "circuito": "ca-1978",
+   "granPremio": "Gran Premio de Canadá",
+   "fecha": "2026-05-24"
+  },
+  {
+   "ronda": 8,
+   "circuito": "mc-1929",
+   "granPremio": "Gran Premio de Mónaco",
+   "fecha": "2026-06-07"
+  },
+  {
+   "ronda": 9,
+   "circuito": "es-1991",
+   "granPremio": "Gran Premio de Barcelona-Cataluña",
+   "fecha": "2026-06-14"
+  },
+  {
+   "ronda": 10,
+   "circuito": "at-1969",
+   "granPremio": "Gran Premio de Austria",
+   "fecha": "2026-06-28"
+  },
+  {
+   "ronda": 11,
+   "circuito": "gb-1948",
+   "granPremio": "Gran Premio de Gran Bretaña",
+   "fecha": "2026-07-05"
+  },
+  {
+   "ronda": 12,
+   "circuito": "be-1925",
+   "granPremio": "Gran Premio de Bélgica",
+   "fecha": "2026-07-19"
+  },
+  {
+   "ronda": 13,
+   "circuito": "hu-1986",
+   "granPremio": "Gran Premio de Hungría",
+   "fecha": "2026-07-26"
+  },
+  {
+   "ronda": 14,
+   "circuito": "nl-1948",
+   "granPremio": "Gran Premio de los Países Bajos",
+   "fecha": "2026-08-23"
+  },
+  {
+   "ronda": 15,
+   "circuito": "it-1922",
+   "granPremio": "Gran Premio de Italia",
+   "fecha": "2026-09-06"
+  },
+  {
+   "ronda": 16,
+   "circuito": "es-2026",
+   "granPremio": "Gran Premio de España",
+   "fecha": "2026-09-13"
+  },
+  {
+   "ronda": 17,
+   "circuito": "az-2016",
+   "granPremio": "Gran Premio de Azerbaiyán",
+   "fecha": "2026-09-26"
+  },
+  {
+   "ronda": 18,
+   "circuito": "sg-2008",
+   "granPremio": "Gran Premio de Singapur",
+   "fecha": "2026-10-11"
+  },
+  {
+   "ronda": 19,
+   "circuito": "us-2012",
+   "granPremio": "Gran Premio de Estados Unidos",
+   "fecha": "2026-10-25"
+  },
+  {
+   "ronda": 20,
+   "circuito": "mx-1962",
+   "granPremio": "Gran Premio de la Ciudad de México",
+   "fecha": "2026-11-01"
+  },
+  {
+   "ronda": 21,
+   "circuito": "br-1940",
+   "granPremio": "Gran Premio de São Paulo",
+   "fecha": "2026-11-08"
+  },
+  {
+   "ronda": 22,
+   "circuito": "us-2023",
+   "granPremio": "Gran Premio de Las Vegas",
+   "fecha": "2026-11-21"
+  },
+  {
+   "ronda": 23,
+   "circuito": "qa-2004",
+   "granPremio": "Gran Premio de Catar",
+   "fecha": "2026-11-29"
+  },
+  {
+   "ronda": 24,
+   "circuito": "ae-2009",
+   "granPremio": "Gran Premio de Abu Dabi",
+   "fecha": "2026-12-06"
+  }
+ ]
+}

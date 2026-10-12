@@ -1,0 +1,8 @@
+Modelo "f2002" de som_natalino (https://som-natalino.itch.io/low), descargado el 12-10-2026
+de la parte gratuita del paquete "Iconic Open Wheelers Car Pack - Low Poly".
+
+Licencia: CC0 1.0 (dominio público). La página dice: "This asset is marked with CC0 1.0."
+El autor no pide crédito ("You dont need to credit me, but it would be cool"); se le da igual.
+
+Se usa la textura sin marcas (sin_marcas.png, "no branding.png" en el original): la otra
+lleva logotipos de patrocinadores parodiados y no se copia aquí.
