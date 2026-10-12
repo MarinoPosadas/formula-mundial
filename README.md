@@ -1,6 +1,6 @@
-# F1_0
+# Fórmula Mundial
 
-Juego de Fórmula 1 en Unity 6000.3.9f1 (Built-in Render Pipeline): Mundial 2026 con los 24
+Juego de monoplazas en Unity 6000.3.9f1 (Built-in Render Pipeline): Mundial 2026 con los 24
 circuitos reales, clasificación a una vuelta y carrera a 3 vueltas. El resultado lo decide un
 simulador (C# puro, con semilla); el 3D solo lo reproduce.
 
