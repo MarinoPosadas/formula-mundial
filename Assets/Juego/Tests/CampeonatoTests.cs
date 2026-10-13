@@ -135,5 +135,53 @@ namespace F1.Tests
             Assert.Greater(Desgaste(Carrera.OrdenPiloto.Atacar), normal + 1f);
             Assert.Less(Desgaste(Carrera.OrdenPiloto.Ahorrar), normal - 0.5f);
         }
+
+        [Test]
+        public void ElDineroLimitaElDesarrollo()
+        {
+            var p = Campeonato.Nueva(Base(), CalendarioIds(), "willians", 4);
+            p.presupuesto = Campeonato.CostePunto * 3 + 0.01f;
+            int hechos = 0;
+            while (Campeonato.Invertir(p, true)) hechos++;
+            Assert.AreEqual(3, hechos);
+            Assert.Less(p.presupuesto, Campeonato.CostePunto);
+            Assert.IsFalse(Campeonato.MotorNuevo(p), "sin dinero no hay motor nuevo");
+        }
+
+        [Test]
+        public void LaTemporadaSiguienteEmpiezaDeCeroYConservaElDinero()
+        {
+            var p = Campeonato.Nueva(Base(), CalendarioIds(), "willians", 9);
+            while (!p.Terminada) Campeonato.Registrar(p, Campeonato.Simular(p, Cir(p.calendario[p.ronda])).carrera);
+            Assert.AreEqual(1, p.historial.Count);
+            Assert.Greater(p.presupuesto, Campeonato.PresupuestoInicial, "se cobra en cada GP");
+            int temporada = p.temporada, semilla = p.semilla;
+            float dinero = p.presupuesto;
+            Campeonato.NuevaTemporada(p);
+            Assert.AreEqual(temporada + 1, p.temporada);
+            Assert.AreEqual(0, p.ronda);
+            Assert.AreEqual(0, p.resultados.Count);
+            Assert.AreNotEqual(semilla, p.semilla, "si no, las carreras se repetirían");
+            Assert.AreEqual(dinero, p.presupuesto, 1e-4f);
+            Assert.Greater(p.objetivo, 0);
+            Assert.AreEqual(0f, p.equipos.Min(e => e.ritmo), 1e-5f, "el mejor coche vuelve a 0");
+        }
+
+        [Test]
+        public void FicharIntercambiaLosPilotosYSeCobra()
+        {
+            var p = Campeonato.Nueva(Base(), CalendarioIds(), "willians", 2);
+            p.presupuesto = 100f;
+            var mio = p.pilotos.First(x => x.equipo == "willians");
+            var otro = p.pilotos.OrderBy(x => x.ritmo).First(x => x.equipo != "willians");
+            string suEquipo = otro.equipo;
+            float coste = Campeonato.CosteFichaje(mio, otro);
+            Assert.IsTrue(Campeonato.Fichar(p, mio.nombre, otro.nombre));
+            Assert.AreEqual("willians", otro.equipo);
+            Assert.AreEqual(suEquipo, mio.equipo);
+            Assert.AreEqual(100f - coste, p.presupuesto, 1e-4f);
+            Campeonato.Registrar(p, Campeonato.Simular(p, Cir(p.calendario[p.ronda])).carrera);
+            Assert.IsFalse(Campeonato.Fichar(p, otro.nombre, mio.nombre), "solo antes del primer GP");
+        }
     }
 }

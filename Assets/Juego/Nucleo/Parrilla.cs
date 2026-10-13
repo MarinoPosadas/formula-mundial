@@ -52,19 +52,59 @@ namespace F1.Nucleo
     }
 
     /// <summary>Generador con semilla: la misma semilla da la misma carrera.</summary>
+    /// <summary>
+    /// El azar de toda la simulación, con semilla. Por dentro, xoshiro256** sembrado con
+    /// SplitMix64. Antes era System.Random, y su algoritmo de Knuth daba secuencias con estructura
+    /// según la semilla: medido el 13-10-2026, el de la pole ganaba el 98 % o el 63 % según
+    /// se eligieran las semillas (pequeñas y consecutivas, o grandes), con el mismo juego.
+    /// </summary>
     public sealed class Azar
     {
-        readonly Random r;
-        public Azar(int semilla) { r = new Random(semilla); }
+        ulong s0, s1, s2, s3;
 
-        public float Uniforme() => (float)r.NextDouble();
+        public Azar(int semilla)
+        {
+            ulong x = unchecked((ulong)(uint)semilla * 0x9E3779B97F4A7C15UL + 0x632BE59BD9B4E019UL);
+            ulong Mezcla()
+            {
+                unchecked
+                {
+                    x += 0x9E3779B97F4A7C15UL;
+                    ulong z = x;
+                    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+                    z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+                    return z ^ (z >> 31);
+                }
+            }
+            s0 = Mezcla(); s1 = Mezcla(); s2 = Mezcla(); s3 = Mezcla();
+        }
+
+        static ulong Rotar(ulong v, int k) => (v << k) | (v >> (64 - k));
+
+        ulong Siguiente()
+        {
+            unchecked
+            {
+                ulong r = Rotar(s1 * 5, 7) * 9;
+                ulong t = s1 << 17;
+                s2 ^= s0; s3 ^= s1; s1 ^= s2; s0 ^= s3;
+                s2 ^= t;
+                s3 = Rotar(s3, 45);
+                return r;
+            }
+        }
+
+        /// <summary>En [0, 1).</summary>
+        double Doble() => (Siguiente() >> 11) * (1.0 / (1UL << 53));
+
+        public float Uniforme() => (float)Doble();
         public float Entre(float a, float b) => a + (b - a) * Uniforme();
-        public bool Prob(float p) => r.NextDouble() < p;
+        public bool Prob(float p) => Doble() < p;
 
         /// <summary>Normal (Box-Muller) con media y desviación típica.</summary>
         public float Normal(float media = 0f, float desviacion = 1f)
         {
-            double u1 = 1.0 - r.NextDouble(), u2 = r.NextDouble();
+            double u1 = 1.0 - Doble(), u2 = Doble();
             return media + desviacion * (float)(Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2));
         }
     }

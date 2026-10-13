@@ -33,10 +33,31 @@ namespace F1.Nucleo
         public bool motorNuevoEnEsteGP;                // penaliza si pasa de los gratuitos
         /// <summary>Hay un GP empezado en vivo sin apuntar: al cargar se da por corrido sin órdenes.</summary>
         public bool gpEnCurso;
+        /// <summary>Vueltas de cada carrera de esta partida (se fija al crearla; 0 en partidas antiguas = 3).</summary>
+        public int vueltas = 3;
+        public int Vueltas => vueltas > 0 ? vueltas : 3;
+
+        // La directiva y el dinero.
+        public float presupuesto = Campeonato.PresupuestoInicial;   // millones de euros
+        public float ingresosUltimoGP;
+        public int objetivo;                           // puesto de constructores que pide la directiva
+        public float confianza = Campeonato.ConfianzaInicial;      // 0-100; acabar el año a 0 es el despido
+        public bool despedido;
+        public string mensajeDirectiva = "";
+        public List<ResumenTemporada> historial = new List<ResumenTemporada>();
 
         public bool Terminada => ronda >= calendario.Length;
         public Equipo MiEquipo => equipos.First(e => e.id == equipoJugador);
         public Parrilla ComoParrilla() => new Parrilla { temporada = temporada, equipos = equipos, pilotos = pilotos };
+    }
+
+    /// <summary>Lo que queda de una temporada acabada.</summary>
+    [Serializable]
+    public class ResumenTemporada
+    {
+        public int temporada;
+        public string equipo, campeonPiloto, campeonEquipo;
+        public int puesto, puntos, objetivo;
     }
 
     [Serializable]
@@ -72,13 +93,23 @@ namespace F1.Nucleo
     {
         public const int PuntosPorRonda = 10;
         /// <summary>Lo que gana un punto de desarrollo: % de vuelta y carácter (motor + / aero -).</summary>
-        public const float GananciaPorPunto = 0.0035f, CaracterPorPunto = 0.02f;
+        public const float GananciaPorPunto = 0.0045f, CaracterPorPunto = 0.02f;
         /// <summary>Motores por temporada sin penalización; a partir de ahí, puestos de parrilla.</summary>
         public const int MotoresGratis = 4, PenalizacionMotor = 5;
         /// <summary>Lo que avanza un rival por ronda (media y desviación, % de vuelta).</summary>
         public const float AvanceRivalMedio = 0.035f, AvanceRivalDesviacion = 0.02f;
 
         public const string ModoConservador = "conservador", ModoNormal = "normal", ModoAgresivo = "agresivo";
+
+        /// <summary>
+        /// El dinero (millones de euros). Desarrollar cuesta CostePunto por punto (hasta
+        /// PuntosPorRonda por ronda, lo que da de sí la fábrica) y un motor nuevo, CosteMotor. Se
+        /// cobra en cada GP: un fijo más una parte por punto de constructores. Calibrado con el arnés de
+        /// temporadas (ver README).
+        /// </summary>
+        public const float PresupuestoInicial = 6f, CostePunto = 0.3f, CosteMotor = 3f, IngresoBase = 2.5f, IngresoPorPunto = 0.08f;
+        /// <summary>La confianza de la directiva al empezar (0-100).</summary>
+        public const float ConfianzaInicial = 60f;
         public const string CargaBaja = "baja", CargaMedia = "media", CargaAlta = "alta";
 
         /// <summary>
@@ -112,12 +143,14 @@ namespace F1.Nucleo
         public static float MultiplicadorDesgaste(float desgaste) => 1f + (desgaste / 30f) * (desgaste / 30f);
 
         /// <summary>Monta un motor nuevo para el próximo GP (desgaste 0).</summary>
-        public static void MotorNuevo(Partida p)
+        public static bool MotorNuevo(Partida p)
         {
-            if (p.motorNuevoEnEsteGP) return;
+            if (p.motorNuevoEnEsteGP || p.presupuesto < CosteMotor) return false;
+            p.presupuesto -= CosteMotor;
             p.motorNuevoEnEsteGP = true;
             p.motoresUsados++;
             p.desgasteMotor = 0f;
+            return true;
         }
 
         public static bool PenalizaMotor(Partida p) => p.motorNuevoEnEsteGP && p.motoresUsados > MotoresGratis;
@@ -125,7 +158,7 @@ namespace F1.Nucleo
         public static Partida Nueva(Parrilla base_, string[] calendario, string equipoJugador, int semilla)
         {
             if (base_.equipos.All(e => e.id != equipoJugador)) throw new ArgumentException($"No existe el equipo {equipoJugador}");
-            return new Partida
+            var p = new Partida
             {
                 temporada = base_.temporada,
                 semilla = semilla,
@@ -134,7 +167,12 @@ namespace F1.Nucleo
                 equipos = base_.equipos.Select(Copiar).ToArray(),
                 pilotos = base_.pilotos.Select(Copiar).ToArray(),
                 puntosDesarrollo = PuntosPorRonda,
+                presupuesto = PresupuestoInicial,
+                confianza = ConfianzaInicial,
             };
+            p.objetivo = ObjetivoDe(p);
+            p.mensajeDirectiva = $"La directiva espera acabar {p.objetivo}.º en constructores.";
+            return p;
         }
 
         // ── Decisiones del jugador ───────────────────────────────────────────
@@ -142,13 +180,25 @@ namespace F1.Nucleo
         /// <summary>Invierte puntos de esta ronda: en motor (recta) o en aerodinámica (curva).</summary>
         public static bool Invertir(Partida p, bool motor)
         {
-            if (p.puntosDesarrollo <= 0) return false;
+            if (p.puntosDesarrollo <= 0 || p.presupuesto < CostePunto) return false;
+            p.presupuesto -= CostePunto;
             var e = p.MiEquipo;
-            e.ritmo -= GananciaPorPunto;
+            e.ritmo -= GananciaPorPunto * Rendimiento(p);
             e.potencia = Math.Clamp(e.potencia + (motor ? CaracterPorPunto : -CaracterPorPunto), -1.5f, 1.5f);
             if (motor) p.invertidoMotor++; else p.invertidoAero++;
             p.puntosDesarrollo--;
             return true;
+        }
+
+        /// <summary>
+        /// Cuánto rinde un punto de desarrollo según el puesto del coche por ritmo: ×0,6 el mejor,
+        /// ×1,4 el peor. Cuanto más arriba, más cuesta mejorar; sin esto, gastando todo se ganaba el
+        /// Mundial al tercer año con un Willians y el Cadillan no salía nunca del fondo.
+        /// </summary>
+        public static float Rendimiento(Partida p)
+        {
+            int puesto = ObjetivoDe(p);
+            return 0.6f + 0.8f * (puesto - 1) / Math.Max(1, p.equipos.Length - 1);
         }
 
         public static string[] MisPilotos(Partida p) =>
@@ -189,15 +239,17 @@ namespace F1.Nucleo
         /// Simula clasificación y carrera del GP de esta ronda (sin apuntar nada todavía). En
         /// vivo, la carrera queda en la parrilla y avanza mientras se ve (para la radio).
         /// </summary>
-        public static (Clasificacion.Vuelta[] q, Carrera carrera) Simular(Partida p, Circuito c, int vueltas = 3, bool enVivo = false)
+        public static (Clasificacion.Vuelta[] q, Carrera carrera) Simular(Partida p, Circuito c, int vueltas = 0, bool enVivo = false)
         {
+            if (vueltas <= 0) vueltas = p.Vueltas;
             var parrilla = ParrillaDelGP(p, c);
             var azar = new Azar(SemillaDe(p, p.ronda));
-            var q = Clasificacion.Simular(c, parrilla, azar);
+            bool lluvia = Clima.Lluvia(c.Id, SemillaDe(p, p.ronda));
+            var q = Clasificacion.Simular(c, parrilla, azar, lluvia);
             if (PenalizaMotor(p)) q = Penalizar(q, p.equipoJugador, PenalizacionMotor);
             var ordenes = string.IsNullOrEmpty(p.prioritario) ? null
                 : new Dictionary<string, string> { [p.equipoJugador] = p.prioritario };
-            return (q, Carrera.Simular(c, q, vueltas, azar, ordenes, enVivo));
+            return (q, Carrera.Simular(c, q, vueltas, azar, ordenes, enVivo, lluvia));
         }
 
         /// <summary>Apunta el resultado, reparte puntos, hace evolucionar a los rivales y pasa de ronda.</summary>
@@ -239,6 +291,7 @@ namespace F1.Nucleo
             p.modoMotor = ModoNormal;
             p.carga = CargaMedia;
             p.motorNuevoEnEsteGP = false;
+            Directiva(p, gp);
             return gp;
         }
 
@@ -251,7 +304,121 @@ namespace F1.Nucleo
             float s = 0f;
             foreach (var co in carrera.Coches)
                 if (co.equipo.id == p.equipoJugador) s += co.segundosAtacando * 0.01f - co.segundosAhorrando * 0.005f;
-            return s;
+            return s * 3f / carrera.Vueltas;            // lo mismo por carrera, dure lo que dure
+        }
+
+        // ── La directiva, el dinero y las temporadas ──────────────────────────
+
+        /// <summary>El puesto que pide la directiva: el que le toca al coche por ritmo.</summary>
+        public static int ObjetivoDe(Partida p) =>
+            p.equipos.OrderBy(e => e.ritmo).ToList().FindIndex(e => e.id == p.equipoJugador) + 1;
+
+        public static int PuestoConstructores(Partida p) =>
+            Constructores(p).FindIndex(x => x.equipo == p.equipoJugador) + 1;
+
+        /// <summary>
+        /// Tras cada GP: se cobra (un fijo y una parte por punto) y la directiva ajusta su confianza
+        /// según cómo vaya el equipo frente al objetivo (hasta ±3 por carrera; +3 más si se gana).
+        /// Al acabar la temporada, el balance: +15 si se cumple (y una prima), −10 por puesto de
+        /// menos; acabar a 0 de confianza es el despido.
+        /// </summary>
+        static void Directiva(Partida p, ResultadoGP gp)
+        {
+            int pts = gp.filas.Where(f => f.equipo == p.equipoJugador).Sum(f => f.puntos);
+            p.ingresosUltimoGP = IngresoBase + IngresoPorPunto * pts;
+            p.presupuesto += p.ingresosUltimoGP;
+            if (p.objetivo <= 0) p.objetivo = ObjetivoDe(p);
+            int pos = PuestoConstructores(p);
+            float cambio = Math.Clamp(p.objetivo - pos, -3f, 3f) + (gp.filas[0].equipo == p.equipoJugador && gp.filas[0].termino ? 3f : 0f);
+            p.confianza = Math.Clamp(p.confianza + cambio, 0f, 100f);
+            p.mensajeDirectiva =
+                pos < p.objetivo ? $"La directiva está encantada: vais {pos}.º y el objetivo era {p.objetivo}.º." :
+                pos == p.objetivo ? $"La directiva está satisfecha: {pos}.º, lo que se esperaba." :
+                p.confianza < 30f ? $"La directiva pierde la paciencia: vais {pos}.º y se esperaba {p.objetivo}.º." :
+                $"La directiva pide más: vais {pos}.º y se esperaba {p.objetivo}.º.";
+            if (!p.Terminada) return;
+
+            // Balance de la temporada.
+            var tp = Pilotos(p); var tc = Constructores(p);
+            p.historial.Add(new ResumenTemporada
+            {
+                temporada = p.temporada, equipo = p.equipoJugador, puesto = pos,
+                puntos = tc.First(x => x.equipo == p.equipoJugador).puntos, objetivo = p.objetivo,
+                campeonPiloto = tp[0].nombre, campeonEquipo = tc[0].nombre,
+            });
+            if (pos <= p.objetivo)
+            {
+                p.confianza = Math.Min(100f, p.confianza + 15f);
+                p.presupuesto += 3f * (p.objetivo - pos + 1);
+                p.mensajeDirectiva = $"Objetivo cumplido: {pos}.º (se pedía {p.objetivo}.º). La directiva te renueva y añade {3f * (p.objetivo - pos + 1):F0} M al presupuesto.";
+            }
+            else
+            {
+                p.confianza = Math.Max(0f, p.confianza - 10f * (pos - p.objetivo));
+                p.despedido = p.confianza <= 0f;
+                p.mensajeDirectiva = p.despedido
+                    ? $"La directiva te despide: {pos}.º cuando se pedía {p.objetivo}.º."
+                    : $"Objetivo fallado: {pos}.º (se pedía {p.objetivo}.º). Sigues, pero la confianza baja a {p.confianza:F0}.";
+            }
+        }
+
+        /// <summary>
+        /// La temporada siguiente: los coches se acercan unos a otros (los rivales más que el tuyo,
+        /// que conserva más de lo que has desarrollado), con algo de azar por el cambio de año; los
+        /// pilotos varían un poco. Motores y desgaste, a cero; objetivo nuevo; el dinero sigue.
+        /// </summary>
+        public static void NuevaTemporada(Partida p)
+        {
+            p.temporada++;
+            p.semilla = unchecked(p.semilla * 31 + 7919);       // si no, las carreras se repetirían
+            var azar = new Azar(p.semilla);
+            float media = p.equipos.Average(e => e.ritmo);
+            foreach (var e in p.equipos)
+            {
+                bool mio = e.id == p.equipoJugador;
+                e.ritmo = media + (e.ritmo - media) * (mio ? 0.85f : 0.7f) + (mio ? 0f : azar.Normal(0f, 0.12f));
+                e.potencia = Math.Clamp(e.potencia * 0.8f + azar.Normal(0f, 0.15f), -1.5f, 1.5f);
+            }
+            float mejor = p.equipos.Min(e => e.ritmo);
+            foreach (var e in p.equipos) e.ritmo -= mejor;             // el mejor coche vuelve a 0
+            foreach (var x in p.pilotos)
+            {
+                x.ritmo += azar.Normal(0f, 0.04f);
+                x.errores = Math.Clamp(x.errores + azar.Normal(0f, 0.003f), 0.004f, 0.04f);
+            }
+            p.ronda = 0;
+            p.resultados.Clear();
+            p.puntosDesarrollo = PuntosPorRonda;
+            p.invertidoMotor = p.invertidoAero = 0;
+            p.modoMotor = ModoNormal; p.carga = CargaMedia; p.prioritario = "";
+            p.desgasteMotor = 0f; p.motoresUsados = 1; p.motorNuevoEnEsteGP = false; p.gpEnCurso = false;
+            // Lo que pide la directiva: entre lo conseguido el año pasado y lo que vale el coche (si se
+            // calculase solo por el coche, no desarrollar saldría gratis: el objetivo bajaría con él).
+            int anterior = p.historial.Count > 0 ? p.historial[p.historial.Count - 1].puesto : ObjetivoDe(p);
+            p.objetivo = (anterior + ObjetivoDe(p)) / 2;
+            p.mensajeDirectiva = $"Temporada {p.temporada}: la directiva espera acabar {p.objetivo}.º en constructores.";
+        }
+
+        /// <summary>Lo que cuesta fichar a 'nuevo' en lugar de 'actual': más cuanto mejor sea.</summary>
+        public static float CosteFichaje(Piloto actual, Piloto nuevo) => Math.Max(1f, 2f + (actual.ritmo - nuevo.ritmo) * 40f);
+
+        /// <summary>
+        /// Fichaje entre temporadas (antes del primer GP): el piloto nuevo llega a tu equipo y el tuyo
+        /// se va al suyo. Se paga del presupuesto.
+        /// </summary>
+        public static bool Fichar(Partida p, string miPiloto, string otro)
+        {
+            if (p.ronda != 0) return false;
+            var a = p.pilotos.FirstOrDefault(x => x.nombre == miPiloto && x.equipo == p.equipoJugador);
+            var b = p.pilotos.FirstOrDefault(x => x.nombre == otro && x.equipo != p.equipoJugador);
+            if (a == null || b == null) return false;
+            float coste = CosteFichaje(a, b);
+            if (p.presupuesto < coste) return false;
+            p.presupuesto -= coste;
+            (a.equipo, b.equipo) = (b.equipo, a.equipo);
+            if (p.prioritario == miPiloto) p.prioritario = "";
+            p.objetivo = ObjetivoDe(p);
+            return true;
         }
 
         /// <summary>Retrasa en la parrilla a los coches de un equipo (penalización por motor).</summary>

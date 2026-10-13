@@ -30,13 +30,13 @@ namespace F1.Nucleo
         }
 
         /// <summary>Lanza el cálculo en segundo plano (en paralelo, una simulación por tarea).</summary>
-        public Task Calcular(Circuito c, Parrilla p, int semilla, Dictionary<string, string> ordenes = null)
+        public Task Calcular(Circuito c, Parrilla p, int semilla, Dictionary<string, string> ordenes = null, bool lluvia = false, int vueltas = 3)
         {
             return Task.Run(() => Parallel.For(0, Total, n =>
             {
                 var azar = new Azar(unchecked(semilla * 31 + n * 7919 + 101));
-                var q = Clasificacion.Simular(c, p, azar);
-                var r = Carrera.Simular(c, q, 3, azar, ordenes).Resultado;
+                var q = Clasificacion.Simular(c, p, azar, lluvia);
+                var r = Carrera.Simular(c, q, vueltas, azar, ordenes, false, lluvia).Resultado;
                 lock (victorias)
                 {
                     poles[indice[q[0].piloto.nombre]]++;

@@ -20,6 +20,29 @@ namespace F1.Nucleo
         public const float Intento = 1.2f;
         /// <summary>Cuántas veces más se intenta adelantar en la primera vuelta.</summary>
         public const float PrimeraVuelta = 2f;
+
+        /// <summary>
+        /// % de vuelta de desviación del ritmo de CARRERA respecto al de clasificación (gestión de
+        /// gomas, carga de gasolina, constancia). Sin él la carrera copiaba la clasificación: medido en
+        /// 240 GP, el de la pole ganaba el 98 % y había 0,03 cambios de líder por carrera.
+        /// </summary>
+        public static float CaracterCarrera = 0.30f;
+        /// <summary>Segundos de desviación del arranque (reflejos) y probabilidad base de una mala salida.</summary>
+        public static float VariacionSalida = 0.30f, MalaSalida = 0.10f;
+        /// <summary>m/s que hay que ir más rápido que el de delante para intentar pasarle (antes 0,5).</summary>
+        public static float UmbralAtaque = 0.2f;
+        /// <summary>Lo que da el DRS (fracción de velocidad) y desde cuántos segundos detrás se intenta pasar.</summary>
+        public static float DRS = 0.0f, AlcanceAtaque = 0.15f;
+        /// <summary>Probabilidad base de ganar la curva en la frenada (con ataque y defensa iguales).</summary>
+        public static float Frenada = 0.5f;
+        /// <summary>Metros (de morro a morro) desde los que aún se puede tirar por dentro en la frenada.</summary>
+        public static float LanceMaximo = 14f;
+        /// <summary>
+        /// Coche de seguridad: probabilidad de que salga sin motivo visible (restos en pista) y de que
+        /// salga tras un abandono por accidente. Mientras está, el líder va al 62 % del ritmo, los demás
+        /// le alcanzan en fila, no se adelanta y no hay DRS; a los 30-45 s, relanzada.
+        /// </summary>
+        public static float ProbCocheSeguridad = 0.18f, CocheSeguridadTrasAccidente = 0.6f;
         /// <summary>Metros tras la salida en los que aún se va en dos columnas, como en la parrilla.</summary>
         public const float DosColumnas = 200f;
         /// <summary>Distancia mínima de morro a morro: nunca menos (un F1 mide 5,6 m).</summary>
@@ -31,7 +54,7 @@ namespace F1.Nucleo
         public const float MultiplicadorAverias = 3f;
         const int VueltasDeUnGP = 57;
 
-        public enum Tipo { Adelantamiento, Error, Toque, Abandono, VueltaRapida, Meta, OrdenDeEquipo, Radio }
+        public enum Tipo { Adelantamiento, Error, Toque, Abandono, VueltaRapida, Meta, OrdenDeEquipo, Radio, CocheSeguridad, Relanzada }
 
         /// <summary>Lo que el jefe de escudería le dice a su piloto por radio durante la carrera.</summary>
         public enum OrdenPiloto { Normal, Atacar, Defender, Ahorrar }
@@ -41,6 +64,30 @@ namespace F1.Nucleo
         /// intentos de adelantamiento, probabilidad de error y defensa. Atacar desgasta el motor y
         /// ahorrar lo cuida (se cobra al apuntar el GP).
         /// </summary>
+        /// <summary>Neumáticos de salida.</summary>
+        public enum Compuesto { Blando, Medio, Duro, Lluvia }
+
+        /// <summary>
+        /// Efecto de cada compuesto (% de vuelta): lo que da al salir y lo que pierde por vuelta de
+        /// desgaste. Comprimido como las averías: en 3 vueltas pasa lo que en una carrera entera. El
+        /// blando sale volando y en la última vuelta va lento; el duro, al revés. Sumadas las tres
+        /// vueltas salen parecidas (~0,2 %): la gracia está en CUÁNDO se gana o se pierde.
+        /// </summary>
+        public static (float inicio, float caida) EfectoGoma(Compuesto g) => g switch
+        {
+            Compuesto.Blando => (-0.80f, 0.80f),
+            Compuesto.Duro => (0.20f, 0.15f),
+            Compuesto.Lluvia => (0f, 0.10f),
+            _ => (-0.20f, 0.40f),
+        };
+
+        /// <summary>Lo que eligen los rivales: blando 35 %, medio 45 %, duro 20 %.</summary>
+        static Compuesto SortearGoma(Azar azar)
+        {
+            float u = azar.Uniforme();
+            return u < 0.35f ? Compuesto.Blando : u < 0.80f ? Compuesto.Medio : Compuesto.Duro;
+        }
+
         public static (float ritmo, float intento, float errores, float defensa) EfectoRadio(OrdenPiloto o) => o switch
         {
             // Medido en 300 carreras: con -0,25 % atacar no movía el puesto medio (el tráfico y
@@ -78,17 +125,25 @@ namespace F1.Nucleo
             internal float errorEn = -1f, toqueEn = -1f, averiaEn = -1f;
             internal int aPor = -1;             // coche al que está adelantando (maniobra en curso)
             internal float ladoManiobra;
+            internal bool resuelta;            // la maniobra en curso ya se decidió en la frenada
             internal float ladoError;          // hacia dónde se va largo en un error (0 = no)
             /// <summary>La orden de radio vigente y el tiempo que ha pasado atacando o ahorrando.</summary>
             public OrdenPiloto radio;
             public float segundosAtacando, segundosAhorrando;
+            /// <summary>Neumáticos y su desgaste (vueltas equivalentes: atacando gasta más, ahorrando menos).</summary>
+            public Compuesto goma;
+            public float desgaste;
         }
 
         public Circuito Circuito { get; private set; }
+        /// <summary>Si la carrera es en mojado.</summary>
+        public bool Lluvia { get; private set; }
         public int Vueltas { get; private set; }
         public Coche[] Coches { get; private set; }
         public List<Suceso> Sucesos { get; } = new List<Suceso>();
         public int Muestras { get; private set; }
+        /// <summary>Maniobras de adelantamiento empezadas (diagnóstico).</summary>
+        public int Intentos { get; private set; }
         public float Duracion => Muestras * Paso;
 
         /// <summary>Orden final: los que acaban por vueltas y tiempo; detrás, los abandonos por distancia.</summary>
@@ -114,9 +169,10 @@ namespace F1.Nucleo
         Dictionary<string, string> ordenes;
 
         public static Carrera Simular(Circuito c, Clasificacion.Vuelta[] parrilla, int vueltas, Azar azar,
-                                      Dictionary<string, string> ordenes = null, bool enVivo = false)
+                                      Dictionary<string, string> ordenes = null, bool enVivo = false, bool lluvia = false)
         {
-            var carrera = new Carrera { Circuito = c, Vueltas = vueltas, ordenes = ordenes };
+            var carrera = new Carrera { Circuito = c, Vueltas = vueltas, ordenes = ordenes, Lluvia = lluvia };
+            var mojado = Clima.Efecto(lluvia);
             float L = c.Trazado.Longitud;
             var coches = new Coche[parrilla.Length];
             for (int k = 0; k < coches.Length; k++)
@@ -127,21 +183,26 @@ namespace F1.Nucleo
                 {
                     piloto = q.piloto, equipo = q.equipo, salida = k, d = d0,
                     lateral = lat0, lateralSalida = lat0, lateralObjetivo = lat0, meta = vueltas * L,
-                    ritmoBase = c.Ritmo(q.equipo, q.piloto) + RitmoCarrera + azar.Normal(0f, Clasificacion.FormaDelDia),
+                    ritmoBase = Clima.Ritmo(c, q.equipo, q.piloto, lluvia) + RitmoCarrera + azar.Normal(0f, Clasificacion.FormaDelDia) + azar.Normal(0f, CaracterCarrera),
                 };
-                co.ritmoVuelta = co.ritmoBase + azar.Normal(0f, q.piloto.regularidad);
+                co.ritmoVuelta = co.ritmoBase + azar.Normal(0f, q.piloto.regularidad * mojado.regularidad);
                 // Salida: reflejos + algún patinazo de vez en cuando.
-                co.arranque = 0.2f + (1f - q.piloto.salida) * 0.3f + Math.Abs(azar.Normal(0f, 0.10f));
-                if (azar.Prob(0.05f + (1f - q.piloto.salida) * 0.05f)) co.arranque += azar.Entre(0.3f, 1.0f);
+                co.arranque = 0.2f + (1f - q.piloto.salida) * 0.3f + Math.Abs(azar.Normal(0f, VariacionSalida));
+                if (azar.Prob(MalaSalida + (1f - q.piloto.salida) * MalaSalida)) co.arranque += azar.Entre(0.3f, 1.0f);
                 // Toque en la primera vuelta y avería: se decide ahora dónde pasarían.
-                if (azar.Prob(0.01f + q.piloto.errores * 0.6f)) co.toqueEn = azar.Entre(120f, 1200f);
-                float pAveria = (1f - (float)Math.Pow(q.equipo.fiabilidad, (double)vueltas / VueltasDeUnGP)) * MultiplicadorAverias;
+                if (azar.Prob(0.01f + q.piloto.errores * 0.6f * mojado.errores)) co.toqueEn = azar.Entre(120f, 1200f);
+                // El multiplicador está pensado para 3 vueltas: con más, las averías por carrera se
+                // quedan como estaban (la carrera corta lleva la sal de una larga; la larga no la dobla).
+                float pAveria = (1f - (float)Math.Pow(q.equipo.fiabilidad, (double)vueltas / VueltasDeUnGP)) * MultiplicadorAverias * 3f / vueltas;
                 if (azar.Prob(pAveria)) co.averiaEn = azar.Entre(0f, vueltas * L);
-                co.errorEn = azar.Prob(q.piloto.errores) ? azar.Entre(0f, L) : -1f;
+                co.errorEn = azar.Prob(q.piloto.errores * mojado.errores) ? azar.Entre(0f, L) : -1f;
+                co.goma = SortearGoma(azar);
+                if (lluvia) co.goma = Compuesto.Lluvia;
                 coches[k] = co;
             }
             carrera.Coches = coches;
             carrera.Iniciar(azar);
+            if (azar.Prob(ProbCocheSeguridad)) carrera.scPrevisto = azar.Entre(15f, vueltas * c.Referencia * 0.75f);
             if (!enVivo) carrera.AlFinal();
             return carrera;
         }
@@ -158,6 +219,21 @@ namespace F1.Nucleo
         public float Tiempo => t;
         /// <summary>Si ya ha acabado (todos en meta o fuera, más la vuelta de enfriamiento).</summary>
         public bool Acabada => cerrada;
+
+        float scPrevisto = -1f, scHasta = -1f;
+        bool scActivo;
+        /// <summary>Si el coche de seguridad está en pista en el instante simulado.</summary>
+        public bool CocheSeguridadEnPista => scActivo;
+
+        void EmpezarCocheSeguridad(int lider)
+        {
+            if (scActivo) return;
+            scActivo = true;
+            scPrevisto = -1f;
+            scHasta = t + azar.Entre(30f, 45f);
+            foreach (var co in Coches) co.aPor = -1;             // nadie sigue adelantando
+            Anotar(t, Tipo.CocheSeguridad, lider, -1, Coches[lider].vueltas + 1, null);
+        }
 
         void Iniciar(Azar a)
         {
@@ -186,7 +262,33 @@ namespace F1.Nucleo
                 Sucesos.Add(new Suceso { t = 0f, tipo = Tipo.VueltaRapida, coche = vueltaRapida.coche, valor = vueltaRapida.tiempo });
         }
 
+        /// <summary>
+        /// Segundos (aproximados) al coche de delante y al de detrás en el instante simulado, para
+        /// decidir la radio. float.MaxValue si no hay nadie.
+        /// </summary>
+        public (float delante, float detras) Huecos(int coche)
+        {
+            var co = Coches[coche];
+            float v = Math.Max(20f, co.v), delante = float.MaxValue, detras = float.MaxValue;
+            foreach (var o in Coches)
+            {
+                if (o == co || o.fuera || o.terminado) continue;
+                float dd = o.d - co.d;
+                if (dd > 0f) delante = Math.Min(delante, dd / v);
+                else detras = Math.Min(detras, -dd / v);
+            }
+            return (delante, detras);
+        }
+
         /// <summary>Orden por radio a un piloto, desde este instante.</summary>
+        /// <summary>Elige los neumáticos de salida de un coche; solo antes de que empiece la carrera.</summary>
+        public bool Gomas(int coche, Compuesto g)
+        {
+            if (t > 0f || Lluvia) return false;
+            Coches[coche].goma = g;
+            return true;
+        }
+
         public void Radio(int coche, OrdenPiloto o)
         {
             if (cerrada || Coches[coche].radio == o) return;
@@ -207,6 +309,13 @@ namespace F1.Nucleo
             float L = c.Trazado.Longitud;
             {
                 orden.Sort((a, b) => Coches[b].d.CompareTo(Coches[a].d));
+                int lider = orden.Find(i => !Coches[i].fuera && !Coches[i].terminado);
+                if (!scActivo && scPrevisto > 0f && t >= scPrevisto && !hayGanador) EmpezarCocheSeguridad(lider);
+                if (scActivo && t >= scHasta)
+                {
+                    scActivo = false;
+                    Anotar(t, Tipo.Relanzada, lider, -1, Coches[lider].vueltas + 1, null);
+                }
                 var antes = new float[Coches.Length];
                 for (int i = 0; i < Coches.Length; i++) antes[i] = Coches[i].d;
 
@@ -220,8 +329,20 @@ namespace F1.Nucleo
                     var radio = EfectoRadio(co.radio);
                     if (co.radio == OrdenPiloto.Atacar) co.segundosAtacando += Paso;
                     else if (co.radio == OrdenPiloto.Ahorrar) co.segundosAhorrando += Paso;
-                    float ritmo = co.ritmoVuelta + radio.ritmo;
+                    var goma = EfectoGoma(co.goma);
+                    if (co.d > 0f)
+                        // En "vueltas de una carrera de 3": con más vueltas cada una gasta menos, y el
+                        // desgaste total de la carrera es el mismo sea cual sea su duración.
+                        co.desgaste += co.v * Paso / L * 3f / Vueltas * (co.radio == OrdenPiloto.Atacar ? 1.5f : co.radio == OrdenPiloto.Ahorrar ? 0.6f : 1f);
+                    float ritmo = co.ritmoVuelta + radio.ritmo + goma.inicio + goma.caida * co.desgaste;
                     float objetivo = c.Velocidad(co.d, ritmo);
+                    if (scActivo)
+                    {
+                        // Detrás del coche de seguridad: el líder a su ritmo; los demás, algo más
+                        // deprisa hasta pegarse al de delante (el tope de seguimiento hace el resto).
+                        float vsc = c.Velocidad(co.d, ritmo) * 0.62f;
+                        objetivo = Math.Min(objetivo, orden[n] == lider ? vsc : vsc * 1.35f);
+                    }
                     if (t < co.perdidaHasta) objetivo *= co.factorPerdida;
 
                     // El de delante: en carrera se va en fila india; en la salida, en dos columnas
@@ -246,7 +367,10 @@ namespace F1.Nucleo
                     // este paso y medirlo así le daba al de detrás ~7 m de más.
                     float hueco = delante != null ? antes[iDelante] - co.d : float.MaxValue;
                     bool zona = c.ZonaDeAdelantamiento(co.d);
-                    if (delante != null && hueco < 60f && zona) objetivo *= 1.012f;   // rebufo
+                    if (delante != null && hueco < 60f && zona && !scActivo) objetivo *= 1.012f;   // rebufo
+                    // DRS: a menos de un segundo del de delante, en zona de adelantamiento y desde la
+                    // segunda vuelta. Sin él los huecos de la salida (~1 s) no se cerraban en 3 vueltas.
+                    if (delante != null && hueco < co.v * 1f && zona && co.vueltas >= 1 && !scActivo) objetivo *= 1f + DRS;
 
                     float vNueva = co.v < objetivo
                         ? Math.Min(objetivo, co.v + Aceleracion(co.v) * Paso)
@@ -254,7 +378,7 @@ namespace F1.Nucleo
 
                     // Atacando, el piloto se lanza desde más lejos (rebufo largo); el tope de
                     // velocidad tras el de delante sigue siendo el de siempre.
-                    float alcance = co.radio == OrdenPiloto.Atacar ? 0.35f : 0.15f;
+                    float alcance = AlcanceAtaque + (co.radio == OrdenPiloto.Atacar ? 0.2f : 0f);
                     bool cerca = delante != null && hueco < HuecoMinimo + co.v * 0.15f;
                     if (delante != null && hueco < HuecoMinimo + co.v * alcance)
                     {
@@ -264,14 +388,14 @@ namespace F1.Nucleo
                                           ordenes.TryGetValue(co.equipo.id, out var prioritario);
                         bool noAtacar = companeros && ordenes[co.equipo.id] == delante.piloto.nombre;
                         bool leCeden = companeros && ordenes[co.equipo.id] == co.piloto.nombre;
-                        if (leCeden && co.aPor < 0 && zona && !enColumnas && objetivo > delante.v + 0.3f)
+                        if (leCeden && !scActivo && co.aPor < 0 && zona && !enColumnas && objetivo > delante.v + 0.3f)
                         {
                             co.aPor = iDelante;
                             co.adelantandoHasta = t + 5f;
                             co.ladoManiobra = delante.lateral >= 0f ? -1f : 1f;
                             Anotar(t, Tipo.OrdenDeEquipo, yo, iDelante, co.vueltas + 1, null);
                         }
-                        if (co.aPor < 0 && !noAtacar && zona && !enColumnas && objetivo > delante.v + 0.5f)
+                        if (co.aPor < 0 && !scActivo && !noAtacar && zona && !enColumnas && objetivo > delante.v + UmbralAtaque)
                         {
                             float defensa = delante.piloto.defensa + EfectoRadio(delante.radio).defensa;
                             float habilidad = Math.Clamp(0.4f + co.piloto.ataque - 0.6f * defensa, 0.05f, 1.2f);
@@ -281,12 +405,41 @@ namespace F1.Nucleo
                             if (azar.Prob(Intento * primera * habilidad * empuje * radio.intento * Paso))
                             {
                                 co.aPor = iDelante;
-                                co.adelantandoHasta = t + 4f;
+                                co.adelantandoHasta = t + 6f;
+                                co.resuelta = false;
+                                Intentos++;
                                 co.ladoManiobra = delante.lateral >= 0f ? -1f : 1f;
                             }
                         }
                         if (cerca && co.aPor != iDelante)
                             vNueva = Math.Min(vNueva, delante.v + (hueco - HuecoMinimo) * 0.8f);
+                    }
+                    // La maniobra se decide en la FRENADA: al acabarse la recta, si va emparejado
+                    // (por el otro carril y a menos de un coche), gana la curva o no según su ataque
+                    // frente a la defensa del otro. Antes había que pasar en recta a pura velocidad:
+                    // 255 intentos por carrera y 15 adelantamientos (6 %).
+                    if (co.aPor >= 0 && !co.resuelta && !zona)
+                    {
+                        var rival = Coches[co.aPor];
+                        float dd = antes[co.aPor] - co.d;
+                        bool emparejado = dd < LanceMaximo && Math.Abs(rival.lateral - co.lateral) >= 1.8f;
+                        co.resuelta = true;
+                        if (!emparejado) co.aPor = -1;           // no llegó: se queda detrás
+                        else
+                        {
+                            float defensa = rival.piloto.defensa + EfectoRadio(rival.radio).defensa;
+                            float p = Math.Clamp(Frenada + 0.6f * (co.piloto.ataque - defensa) - 0.03f * Math.Max(0f, dd - Contacto), 0.10f, 0.85f);
+                            if (azar.Prob(p))
+                            {
+                                rival.perdidaHasta = t + 1.5f; rival.factorPerdida = 0.88f;   // cierra la curva por fuera
+                                co.adelantandoHasta = t + 3f;
+                            }
+                            else
+                            {
+                                co.aPor = -1;
+                                co.perdidaHasta = t + 1f; co.factorPerdida = 0.92f;           // levanta el pie
+                            }
+                        }
                     }
                     // Tope duro contra CUALQUIER coche que ocupe tu carril en los próximos metros, no
                     // solo contra el primero: el más cercano puede ir abierto y el que de verdad
@@ -346,8 +499,8 @@ namespace F1.Nucleo
                         co.inicioVuelta = tLinea;
                         if (tv < co.mejorVuelta) co.mejorVuelta = tv;
                         if (co.vueltas > 1 && tv < vueltaRapida.tiempo) vueltaRapida = (orden[n], tv);   // la de salida no cuenta
-                        co.ritmoVuelta = co.ritmoBase + azar.Normal(0f, co.piloto.regularidad);
-                        co.errorEn = azar.Prob(co.piloto.errores * EfectoRadio(co.radio).errores) ? co.vueltas * L + azar.Entre(0f, L) : -1f;
+                        co.ritmoVuelta = co.ritmoBase + azar.Normal(0f, co.piloto.regularidad * Clima.Efecto(Lluvia).regularidad);
+                        co.errorEn = azar.Prob(co.piloto.errores * EfectoRadio(co.radio).errores * Clima.Efecto(Lluvia).errores) ? co.vueltas * L + azar.Entre(0f, L) : -1f;
 
                         if (co.d >= co.meta)
                         {
@@ -383,7 +536,13 @@ namespace F1.Nucleo
             if (co.toqueEn >= 0f && co.d >= co.toqueEn)
             {
                 co.toqueEn = -1f;
-                if (azar.Prob(0.35f)) { Abandonar(co, t, "Accidente"); return; }
+                if (azar.Prob(0.35f))
+                {
+                    Abandonar(co, t, "Accidente");
+                    if (azar.Prob(CocheSeguridadTrasAccidente) && !hayGanador)
+                        EmpezarCocheSeguridad(orden.Find(k => !Coches[k].fuera && !Coches[k].terminado));
+                    return;
+                }
                 co.perdidaHasta = t + azar.Entre(2f, 5f);
                 co.factorPerdida = 0.3f;
                 co.ritmoBase += azar.Entre(0.3f, 1.5f);      // daños en el alerón

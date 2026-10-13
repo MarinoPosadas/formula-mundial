@@ -93,6 +93,32 @@ namespace F1.Nucleo
     }
 
     /// <summary>Clasificación a una vuelta lanzada: cada piloto tiene un intento.</summary>
+    /// <summary>
+    /// El tiempo del GP: si llueve. Se decide con su propia semilla (se sabe antes de empezar y no
+    /// cambia el resto del azar). En mojado el coche pesa menos y el piloto más, todos van un 8 %
+    /// más lentos, con el doble de irregularidad y el triple de errores, y con gomas de lluvia.
+    /// </summary>
+    public static class Clima
+    {
+        static readonly System.Collections.Generic.Dictionary<string, float> Probabilidad = new System.Collections.Generic.Dictionary<string, float>
+        {
+            ["be-1925"] = 0.30f, ["gb-1948"] = 0.28f, ["br-1940"] = 0.28f, ["jp-1962"] = 0.22f, ["ca-1978"] = 0.20f,
+            ["sg-2008"] = 0.18f, ["hu-1986"] = 0.15f, ["at-1969"] = 0.15f, ["nl-1948"] = 0.18f, ["cn-2004"] = 0.15f,
+            ["bh-2002"] = 0.02f, ["sa-2021"] = 0.02f, ["ae-2009"] = 0.02f, ["qa-2004"] = 0.02f, ["us-2023"] = 0.03f,
+        };
+
+        public static float ProbabilidadLluvia(string circuito) => Probabilidad.TryGetValue(circuito ?? "", out var p) ? p : 0.10f;
+
+        public static bool Lluvia(string circuito, int semilla) =>
+            new Azar(unchecked(semilla * 31 + 0x2F6E2B1)).Prob(ProbabilidadLluvia(circuito));
+
+        public static (float regularidad, float errores) Efecto(bool lluvia) => lluvia ? (2f, 3f) : (1f, 1f);
+
+        /// <summary>El ritmo (% sobre la referencia) en seco o en mojado.</summary>
+        public static float Ritmo(Circuito c, Equipo e, Piloto p, bool lluvia) =>
+            !lluvia ? c.Ritmo(e, p) : c.Ritmo(e, p) - 0.4f * e.ritmo + 1.5f * p.ritmo + 8f;
+    }
+
     public static class Clasificacion
     {
         public const float FormaDelDia = 0.12f;      // % de desviación típica: cómo sale el día
@@ -107,15 +133,16 @@ namespace F1.Nucleo
             public float perdida;     // % de vuelta que le costó el error (ya incluido en ritmo)
         }
 
-        public static Vuelta[] Simular(Circuito c, Parrilla parrilla, Azar azar)
+        public static Vuelta[] Simular(Circuito c, Parrilla parrilla, Azar azar, bool lluvia = false)
         {
             var res = new Vuelta[parrilla.pilotos.Length];
             for (int i = 0; i < res.Length; i++)
             {
                 var p = parrilla.pilotos[i];
                 var e = parrilla.EquipoDe(p);
-                float ritmo = c.Ritmo(e, p) + azar.Normal(0f, FormaDelDia) + azar.Normal(0f, p.regularidad);
-                bool error = azar.Prob(p.errores * 2f);           // en clasificación se arriesga más
+                var m = Clima.Efecto(lluvia);
+                float ritmo = Clima.Ritmo(c, e, p, lluvia) + azar.Normal(0f, FormaDelDia) + azar.Normal(0f, p.regularidad * m.regularidad);
+                bool error = azar.Prob(p.errores * 2f * m.errores);   // en clasificación se arriesga más
                 float perdida = error ? azar.Entre(0.3f, 2.0f) : 0f;
                 ritmo += perdida;
                 res[i] = new Vuelta { piloto = p, equipo = e, ritmo = ritmo, segundos = c.Segundos(ritmo), error = error, perdida = perdida };

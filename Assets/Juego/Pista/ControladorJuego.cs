@@ -14,7 +14,7 @@ namespace F1.Juego
     /// </summary>
     public class ControladorJuego : MonoBehaviour
     {
-        enum Pantalla { Portada, Pilotos, Calendario, Ficha, ComoSeJuega, Opciones, ElegirEquipo, Temporada, Presentacion, ClasificacionEnPista, Clasificacion, Carrera, Resultado, FinTemporada }
+        enum Pantalla { Portada, Pilotos, Calendario, Ficha, ComoSeJuega, Opciones, ElegirEquipo, Temporada, Presentacion, ClasificacionEnPista, Clasificacion, Carrera, Resultado, FinTemporada, Mercado }
         enum Pestana { Pilotos, Constructores, UltimoGP, Calendario }
 
         [SerializeField] GameObject cochePrefab;
@@ -44,6 +44,7 @@ namespace F1.Juego
         Clasificacion.Vuelta[] parrilla;
         Carrera carrera;
         bool porApuntar;
+        bool lluvia;                          // el tiempo del GP en curso
         Favoritos favoritos;
         // En un GP suelto también se puede llevar el muro de una escudería (radio y orden de equipo).
         string equipoSuelto = "", prioridadSuelta = "";
@@ -67,6 +68,70 @@ namespace F1.Juego
             // De fondo en la portada, un circuito al azar del calendario.
             var c = calendario.carreras[UnityEngine.Random.Range(0, calendario.carreras.Length)];
             MostrarCircuito(c.circuito, CamaraCircuito.Modo.Orbita);
+            if (Array.IndexOf(Environment.GetCommandLineArgs(), "-prueba-humo") >= 0) StartCoroutine(PruebaDeHumo());
+        }
+
+        // ── Prueba de humo ───────────────────────────────────────────────────
+
+        /// <summary>
+        /// Arrancando el ejecutable con -prueba-humo, el juego se recorre solo: un GP con lluvia en
+        /// Spa (favoritos, clasificación en pista, parrilla, carrera y resultado) y otro en seco en
+        /// Monza con gomas elegidas. Deja fotos y prueba_humo.txt en persistentDataPath y se cierra.
+        /// Sirve para comprobar una build sin tocarla (lo que solo falla fuera del editor).
+        /// </summary>
+        System.Collections.IEnumerator PruebaDeHumo()
+        {
+            string carpeta = Application.persistentDataPath;
+            var informe = new System.Text.StringBuilder();
+            void Apuntar(string x) { informe.AppendLine($"{Time.realtimeSinceStartup:F1} s  {x}"); File.WriteAllText(Path.Combine(carpeta, "prueba_humo.txt"), informe.ToString()); }
+            void Foto(string nombre) => ScreenCapture.CaptureScreenshot(Path.Combine(carpeta, $"prueba_{nombre}.png"));
+            var finDeFotograma = new WaitForEndOfFrame();
+            System.Collections.IEnumerator Esperar(System.Func<bool> hasta, float tope)
+            {
+                float t0 = Time.realtimeSinceStartup;
+                while (!hasta() && Time.realtimeSinceStartup - t0 < tope) yield return null;
+            }
+            yield return new WaitForSeconds(2f);
+            Apuntar("inicio");
+
+            // 1. Lluvia en Spa, con el muro de Willians.
+            int intentos = 0;
+            do { GranPremioSuelto("be-1925"); intentos++; } while (!lluvia && intentos < 80);
+            equipoSuelto = "willians";
+            Apuntar($"GP de Bélgica, lluvia={lluvia} tras {intentos} intentos");
+            yield return Esperar(() => favoritos != null && favoritos.Hechas >= favoritos.Total, 30f);
+            Apuntar($"favoritos {favoritos?.Hechas}/{favoritos?.Total}: {string.Join(", ", favoritos.Orden().Take(3).Select(x => $"{x} {favoritos.Victoria(x) * 100f:F0} %"))}");
+            yield return new WaitForSeconds(0.5f); Foto("1_presentacion"); yield return finDeFotograma; yield return null;
+            VerClasificacion();
+            reproductorQ.VelocidadIndice = 4;
+            yield return new WaitForSeconds(5f); Foto("2_clasificacion_lluvia"); yield return finDeFotograma; yield return null;
+            yield return Esperar(() => reproductorQ.Terminada, 90f);
+            IrAParrilla();
+            yield return new WaitForSeconds(1f); Foto("3_parrilla_lluvia"); yield return finDeFotograma; yield return null;
+            VerCarrera();
+            reproductor.VelocidadIndice = 4;
+            yield return new WaitForSeconds(8f); Apuntar(Lluvia.Estado()); Foto("4_carrera_lluvia"); yield return finDeFotograma; yield return null;
+            yield return Esperar(() => reproductor.Terminada, 150f);
+            Apuntar($"carrera terminada={reproductor.Terminada}, sucesos {carrera.Sucesos.Count}, coche de seguridad {carrera.Sucesos.Exists(x => x.tipo == Carrera.Tipo.CocheSeguridad)}");
+            IrAlResultado();
+            yield return new WaitForSeconds(1f); Foto("5_resultado"); yield return finDeFotograma; yield return null;
+            Continuar();
+
+            // 2. Seco en Monza, con gomas blandas para Willians.
+            intentos = 0;
+            do { GranPremioSuelto("it-1922"); intentos++; } while (lluvia && intentos < 20);
+            equipoSuelto = "willians";
+            IrAParrilla();
+            for (int i = 0; i < carrera.Coches.Length; i++)
+                if (carrera.Coches[i].equipo.id == "willians") carrera.Gomas(i, Carrera.Compuesto.Blando);
+            yield return new WaitForSeconds(1f); Foto("6_parrilla_seco"); yield return finDeFotograma; yield return null;
+            VerCarrera();
+            reproductor.VelocidadIndice = 2;
+            yield return new WaitForSeconds(12f); Foto("7_carrera_seco"); yield return finDeFotograma; yield return null;
+            Apuntar($"GP de Italia, lluvia={lluvia}, Willians con {string.Join("/", carrera.Coches.Where(x => x.equipo.id == "willians").Select(x => x.goma))}");
+            Apuntar("FIN");
+            yield return new WaitForSeconds(1f);
+            Application.Quit();
         }
 
         void Update()
@@ -134,9 +199,10 @@ namespace F1.Juego
             int semilla = UnityEngine.Random.Range(1, int.MaxValue);
             circuito = new Circuito(circuito.Trazado, datos.poleReferencia, datos.id, semilla) { Escapatoria = datos.Urbano ? 3.5f : 10f };
             var azar = new Azar(semilla);
-            parrilla = Clasificacion.Simular(circuito, baseTemporada, azar);
+            lluvia = Clima.Lluvia(datos.id, semilla);
+            parrilla = Clasificacion.Simular(circuito, baseTemporada, azar, lluvia);
             // En vivo: avanza mientras se ve, para que la radio cuente (sin órdenes sale igual).
-            carrera = Carrera.Simular(circuito, parrilla, 3, azar, null, enVivo: true);
+            carrera = Carrera.Simular(circuito, parrilla, Opciones.Vueltas, azar, null, enVivo: true, lluvia: lluvia);
             prioridadSuelta = "";
             CalcularFavoritos(baseTemporada, semilla, null);
             pantalla = Pantalla.Presentacion;
@@ -145,6 +211,7 @@ namespace F1.Juego
         void NuevoCampeonato(string equipo)
         {
             partida = Campeonato.Nueva(baseTemporada, calendario.carreras.Select(c => c.circuito).ToArray(), equipo, UnityEngine.Random.Range(1, int.MaxValue));
+            partida.vueltas = Opciones.Vueltas;
             Guardar();
             IrATemporada();
         }
@@ -152,7 +219,8 @@ namespace F1.Juego
         void IrATemporada()
         {
             enCampeonato = true;
-            if (partida.Terminada) { pantalla = Pantalla.FinTemporada; return; }
+            if (partida.objetivo <= 0) partida.objetivo = Campeonato.ObjetivoDe(partida);   // partidas de antes de la directiva
+            if (partida.Terminada || partida.despedido) { pantalla = Pantalla.FinTemporada; return; }
             MostrarCircuito(partida.calendario[partida.ronda], CamaraCircuito.Modo.Orbita);
             pantalla = Pantalla.Temporada;
         }
@@ -169,9 +237,10 @@ namespace F1.Juego
             {
                 var ordenes = string.IsNullOrEmpty(partida.prioritario) ? null
                     : new Dictionary<string, string> { [partida.equipoJugador] = partida.prioritario };
+                lluvia = Clima.Lluvia(circuito.Id, Campeonato.SemillaDe(partida, partida.ronda));
                 CalcularFavoritos(Campeonato.ParrillaDelGP(partida, circuito), Campeonato.SemillaDe(partida, partida.ronda), ordenes);
             }
-            (parrilla, carrera) = Campeonato.Simular(partida, circuito, 3, enVivo: ver);
+            (parrilla, carrera) = Campeonato.Simular(partida, circuito, 0, enVivo: ver);
             porApuntar = true;
             if (ver) { partida.gpEnCurso = true; Guardar(); pantalla = Pantalla.Presentacion; }
             else { Apuntar(); pantalla = Pantalla.Resultado; }
@@ -184,7 +253,7 @@ namespace F1.Juego
         void CalcularFavoritos(Parrilla p, int semilla, Dictionary<string, string> ordenes)
         {
             favoritos = new Favoritos(p, SimulacionesFavoritos);
-            favoritos.Calcular(circuito, p, unchecked(semilla ^ 0x2545F491), ordenes);
+            favoritos.Calcular(circuito, p, unchecked(semilla ^ 0x2545F491), ordenes, lluvia, enCampeonato && partida != null ? partida.Vueltas : Opciones.Vueltas);
         }
 
         /// <summary>Apunta el GP en curso (si falta): acaba de simularlo y guarda.</summary>
@@ -224,6 +293,7 @@ namespace F1.Juego
             reproductorQ.VelocidadIndice = Opciones.Ritmo;
             camara.modo = CamaraCircuito.DeOpcion(Opciones.Camara);
             reproductorQ.Iniciar(sesion, coches, camara, enCampeonato ? partida.equipoJugador : null);
+            Lluvia.Poner(lluvia, camara.GetComponent<Camera>());
             pantalla = Pantalla.ClasificacionEnPista;
         }
 
@@ -243,12 +313,14 @@ namespace F1.Juego
             reproductor.AlSalir = () => sonido.Salida();
             reproductor.favoritos = favoritos != null && favoritos.Hechas >= favoritos.Total ? favoritos : null;
             reproductor.Iniciar(carrera, parrilla, coches, camara);
+            Lluvia.Poner(carrera.Lluvia, camara.GetComponent<Camera>());
             camara.modo = CamaraCircuito.DeOpcion(Opciones.Camara);
             pantalla = Pantalla.Carrera;
         }
 
         void Continuar()
         {
+            Lluvia.Poner(false, camara.GetComponent<Camera>());
             QuitarCoches();
             if (enCampeonato) IrATemporada();
             else { pantalla = Pantalla.Calendario; camara.modo = CamaraCircuito.Modo.Orbita; camara.objetivo = null; }
@@ -305,6 +377,7 @@ namespace F1.Juego
                 case Pantalla.Carrera: PantallaCarrera(); break;
                 case Pantalla.Resultado: PantallaResultado(); break;
                 case Pantalla.FinTemporada: FinTemporada(); break;
+                case Pantalla.Mercado: Mercado(); break;
             }
             if (!string.IsNullOrEmpty(aviso)) GUI.Label(new Rect(20, Interfaz.Alto - 30, 800, 24), $"<color=#f88>{aviso}</color>", Interfaz.Normal);
         }
@@ -502,7 +575,7 @@ namespace F1.Juego
             Dato("Longitud", $"{datos.longitudMedida / 1000f:F3} km · {Curvas()} curvas aprox. · sentido {datos.giro}");
             Dato("Carácter", $"{(datos.Urbano ? "urbano" : "permanente")}, {TipoCircuito(circuito)} · ancho {datos.ancho:F0} m");
             Dato("Referencia", datos.poleReferencia > 0 ? $"pole 2025: {Crono(datos.poleReferencia)}" : "sin pole de referencia (circuito nuevo)");
-            Dato("Carrera", "3 vueltas, tras una clasificación a una vuelta");
+            Dato("Carrera", $"{(enCampeonato && partida != null ? partida.Vueltas : Opciones.Vueltas)} vueltas, tras una clasificación a una vuelta");
             GUILayout.BeginArea(new Rect(r.x + 22, r.yMax - 56, r.width - 44, 44));
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Volver", Interfaz.Boton, GUILayout.Width(120))) pantalla = volverDeFicha;
@@ -519,7 +592,7 @@ namespace F1.Juego
         {
             ("El juego",
              "Un Mundial de {campeonato} de 2026 con los 24 circuitos reales: su trazado sale del GPS y su longitud cuadra con la oficial.\n\n" +
-             "Cada Gran Premio tiene una <b>clasificación a una vuelta</b> (decide la parrilla) y una <b>carrera de 3 vueltas</b> con salida parada.\n\n" +
+             "Cada Gran Premio tiene una <b>clasificación a una vuelta</b> (decide la parrilla) y una <b>carrera de 3, 5 o 10 vueltas</b> (en Opciones) con salida parada.\n\n" +
              "Los resultados los decide una <b>simulación</b>, no los dibujos: el ritmo de cada coche y piloto, su forma del día, lo bien que le sienta el circuito, la salida, el rebufo, los adelantamientos (solo donde la pista lo permite), los errores y las averías. Todo con <b>azar ponderado</b>: el mejor gana más a menudo, pero no siempre.\n\n" +
              "El 3D reproduce exactamente lo que ha pasado en la simulación."),
             ("Gran Premio suelto",
@@ -527,24 +600,33 @@ namespace F1.Juego
              "Es la manera de ver un circuito en acción, o de probar quién gana dónde."),
             ("Campeonato: eres jefe de escudería",
              "Eliges una escudería y disputas las 24 carreras. Antes de cada Gran Premio decides:\n\n" +
-             "• <b>Desarrollo</b>: 10 puntos por ronda entre motor (mejor en recta) y aerodinámica (mejor en curva). Lo que no gastes se pierde, y los rivales también desarrollan.\n\n" +
+             "• <b>Desarrollo</b>: hasta 10 puntos por ronda entre motor (mejor en recta) y aerodinámica (mejor en curva). Cada punto cuesta dinero, y rinde más cuanto más atrás esté tu coche. Los rivales también desarrollan.\n\n" +
              "• <b>Carga aerodinámica</b> del GP: baja en circuitos de potencia (Monza), alta en los de curva lenta (Mónaco). Acertar da ventaja; fallar la quita.\n\n" +
              "• <b>Modo de motor</b>: el agresivo da ritmo pero desgasta, y el desgaste multiplica las averías en las carreras siguientes. Tienes 4 motores por temporada; desde el quinto, 5 puestos de sanción en parrilla.\n\n" +
              "• <b>Órdenes de equipo</b>: carrera libre o prioridad para uno de tus pilotos (su compañero no le ataca y le deja pasar).\n\n" +
+             "• <b>La directiva</b> te pide un puesto de constructores. Su confianza sube y baja con los resultados; acabar el año sin ella es el despido. Cumplir trae una prima.\n\n" +
+             "• <b>Dinero</b>: cobras en cada GP (un fijo y una parte por punto) y lo gastas en desarrollo, motores y fichajes.\n\n" +
+             "• Al acabar el año, la <b>siguiente temporada</b>: los coches se acercan (el tuyo conserva más de lo desarrollado) y hay <b>mercado de pilotos</b>.\n\n" +
              "La partida se guarda sola tras cada carrera."),
             ("Puntos y clasificaciones",
              "Puntúan los diez primeros: 25, 18, 15, 12, 10, 8, 6, 4, 2 y 1. Desde 2025 no hay punto por la vuelta rápida.\n\n" +
              "Hay dos clasificaciones: <b>pilotos</b> y <b>constructores</b> (la suma de los dos pilotos de cada escudería). Los empates se deshacen por número de victorias, luego de segundos puestos, etc.\n\n" +
              "Con los mejores coches se lucha por el título; con los de atrás, por ser el mejor del resto."),
             ("Durante la carrera",
-             "• <b>Cámara</b>: vista general del circuito, persecución, televisión (cámaras fijas junto a la pista) y a bordo.\n\n" +
-             "• <b>Ritmo</b>: la reproducción va de x0,5 a x8.\n\n" +
-             "• En la <b>torre</b> de la derecha, pulsa un piloto para seguirlo; «Seguir al líder» vuelve al primero.\n\n" +
-             "• Abajo a la izquierda salen los adelantamientos, errores, toques y abandonos.\n\n" +
-             "• Puedes saltar al resultado en cualquier momento."),
+             "• <b>Cámara</b>: persecución, detrás del coche, a bordo, televisión y vista general. La <b>automática</b> va a la pelea más apretada y, si hay un incidente, a él.\n\n" +
+             "• En la <b>torre</b>, pulsa un piloto para seguirlo con la cámara de detrás del coche; «Cámara automática» vuelve a la realización. La letra de color es su goma (B blando, M medio, D duro, LL lluvia).\n\n" +
+             "• Arriba, quién sale en cámara; abajo, la pelea que se está viendo y el comentarista; los rótulos grandes avisan de abandonos, salidas de pista y del coche de seguridad.\n\n" +
+             "• <b>Ritmo</b> de x0,5 a x8, y puedes saltar al resultado en cualquier momento."),
+            ("Radio del muro",
+             "Si llevas una escudería (campeonato, o el muro elegido en un GP suelto), en carrera das órdenes a cada piloto. Junto a su nombre ves a cuánto va el de delante y el de detrás (con «DRS» si está a menos de 1 s) y cómo van sus gomas.\n\n" +
+             "• <b>Ataca</b>: más ritmo y el doble de intentos de adelantar; más errores y gasta gomas (y motor en el campeonato). Con alguien a menos de 1 s delante o en la última vuelta.\n\n" +
+             "• <b>Normal</b>: para cuando no pasa nada cerca.\n\n" +
+             "• <b>Defiende</b>: cuesta mucho más ganarte la frenada. Con alguien más rápido justo detrás, sobre todo al final.\n\n" +
+             "• <b>Ahorra</b>: algo más lento, casi sin errores y cuidando gomas y motor. Si vas solo, tras el coche de seguridad, o para guardar gomas y atacar en la última vuelta.\n\n" +
+             "• <b>Orden de equipo</b>: «Manda» a uno y su compañero no le ataca y le deja pasar."),
         };
 
-        static readonly string[] Pestanas = { "El juego", "GP suelto", "Campeonato", "Puntos", "En carrera" };
+        static readonly string[] Pestanas = { "El juego", "GP suelto", "Campeonato", "Puntos", "En carrera", "Radio" };
 
         void ComoSeJuega()
         {
@@ -552,7 +634,7 @@ namespace F1.Juego
             Interfaz.Fondo_(r, 0.95f);
             GUI.Label(new Rect(r.x + 30, r.y + 18, 600, 36), "Cómo se juega", Interfaz.Grande);
             for (int i = 0; i < Ayuda.Length; i++)
-                if (GUI.Button(new Rect(r.x + 30 + i * 150, r.y + 64, 144, 34), Pestanas[i], i == paginaAyuda ? Interfaz.BotonSel : Interfaz.Boton))
+                if (GUI.Button(new Rect(r.x + 30 + i * (r.width - 60) / Ayuda.Length, r.y + 64, (r.width - 60) / Ayuda.Length - 6, 34), Pestanas[i], i == paginaAyuda ? Interfaz.BotonSel : Interfaz.Boton))
                     paginaAyuda = i;
             GUI.Label(new Rect(r.x + 30, r.y + 116, r.width - 60, 30), Ayuda[paginaAyuda].titulo, Interfaz.Subtitulo);
             GUI.Label(new Rect(r.x + 30, r.y + 150, r.width - 60, r.height - 220), Ayuda[paginaAyuda].texto.Replace("{campeonato}", baseTemporada.campeonato), Interfaz.Normal);
@@ -588,7 +670,12 @@ namespace F1.Juego
             int[] valores = { 1, 5, 3, 2 };
             for (int i = 0; i < camaras.Length; i++)
                 if (GUI.Button(new Rect(r.x + 260 + i * 108, y - 4, 102, 34), camaras[i], Opciones.Camara == valores[i] ? Interfaz.BotonSel : Interfaz.Boton)) Opciones.Camara = valores[i];
-            y += 56;
+            y += 48;
+            GUI.Label(new Rect(r.x + 30, y, 220, 24), "Vueltas de carrera", Interfaz.Subtitulo);
+            foreach (var (k, n) in new[] { (0, 3), (1, 5), (2, 10) })
+                if (GUI.Button(new Rect(r.x + 260 + k * 108, y - 4, 102, 34), $"{n} vueltas", Opciones.Vueltas == n ? Interfaz.BotonSel : Interfaz.Boton)) Opciones.Vueltas = n;
+            GUI.Label(new Rect(r.x + 590, y, 150, 30), "<color=#9aa>el campeonato, al crearlo</color>", Interfaz.Pequeno);
+            y += 48;
             GUI.Label(new Rect(r.x + 30, y, 220, 24), "Campeonato guardado", Interfaz.Subtitulo);
             GUI.enabled = HayPartida;
             if (!confirmarBorrado && GUI.Button(new Rect(r.x + 260, y - 4, 200, 34), "Borrar campeonato", Interfaz.Boton)) confirmarBorrado = true;
@@ -633,7 +720,7 @@ namespace F1.Juego
                 GUI.Label(new Rect(22, fila.y + 12, 260, 28), e.nombre, Interfaz.Subtitulo);
                 GUI.Label(new Rect(22, fila.y + 40, 270, 20), $"{i + 1}.º en ritmo · {Caracter(e.potencia)}", Interfaz.Pequeno);
                 string reto = i < 2 ? "Favorito al título" : i < 4 ? "Aspirante a victorias" : i < 7 ? "Luchar por los puntos" : "Sobrevivir al fondo de la parrilla";
-                GUI.Label(new Rect(22, fila.y + 60, 260, 20), $"<color=#e55>{reto}</color>", Interfaz.Pequeno);
+                GUI.Label(new Rect(22, fila.y + 60, 270, 20), $"<color=#e55>{reto}</color> <color=#9aa>· la directiva pide {i + 1}.º</color>", Interfaz.Pequeno);
                 var pilotos = baseTemporada.pilotos.Where(p => p.equipo == e.id).ToArray();
                 for (int k = 0; k < pilotos.Length; k++)
                 {
@@ -683,12 +770,12 @@ namespace F1.Juego
             if (GUI.Button(new Rect(r.xMax - 90, y, 70, 26), "Ficha", Interfaz.Boton)) { volverDeFicha = Pantalla.Temporada; pantalla = Pantalla.Ficha; }
             y += 54;
 
-            GUI.Label(new Rect(r.x + 20, y, 430, 20), $"<b>Desarrollo</b> · puntos de esta ronda: <b>{p.puntosDesarrollo}</b>   <color=#9aa>(temporada: motor {p.invertidoMotor}, aero {p.invertidoAero})</color>", Interfaz.Normal);
+            GUI.Label(new Rect(r.x + 20, y, 440, 20), $"<b>Desarrollo</b> · quedan <b>{p.puntosDesarrollo}</b> puntos · {Campeonato.CostePunto:F1} M c/u <color=#9aa>· rinde x{Campeonato.Rendimiento(p):F1}</color>", Interfaz.Normal);
             y += 24;
-            GUI.enabled = p.puntosDesarrollo > 0;
+            GUI.enabled = p.puntosDesarrollo > 0 && p.presupuesto >= Campeonato.CostePunto;
             if (GUI.Button(new Rect(r.x + 20, y, 130, 32), "+1 motor", Interfaz.Boton)) Campeonato.Invertir(p, true);
             if (GUI.Button(new Rect(r.x + 156, y, 130, 32), "+1 aerodinámica", Interfaz.Boton)) Campeonato.Invertir(p, false);
-            if (GUI.Button(new Rect(r.x + 292, y, 158, 32), "Repartir a medias", Interfaz.Boton)) { int n = p.puntosDesarrollo; for (int i = 0; i < n; i++) Campeonato.Invertir(p, i % 2 == 0); }
+            if (GUI.Button(new Rect(r.x + 292, y, 158, 32), "Gastar a medias", Interfaz.Boton)) { int n = 0; while (Campeonato.Invertir(p, n++ % 2 == 0)) { } }
             GUI.enabled = true;
             y += 44;
 
@@ -706,8 +793,8 @@ namespace F1.Juego
             Opcion(new Rect(r.x + 166, y, 120, 32), ref p.modoMotor, Campeonato.ModoNormal, "Normal");
             Opcion(new Rect(r.x + 292, y, 158, 32), ref p.modoMotor, Campeonato.ModoAgresivo, "Agresivo");
             y += 38;
-            GUI.enabled = !p.motorNuevoEnEsteGP;
-            string coste = p.motoresUsados >= Campeonato.MotoresGratis ? $" (−{Campeonato.PenalizacionMotor} puestos en parrilla)" : " (sin sanción)";
+            GUI.enabled = !p.motorNuevoEnEsteGP && p.presupuesto >= Campeonato.CosteMotor;
+            string coste = $" · {Campeonato.CosteMotor:F0} M" + (p.motoresUsados >= Campeonato.MotoresGratis ? $", −{Campeonato.PenalizacionMotor} puestos en parrilla" : ", sin sanción");
             if (GUI.Button(new Rect(r.x + 20, y, 430, 30), p.motorNuevoEnEsteGP ? "Motor nuevo montado para este GP" : "Montar motor nuevo" + coste, Interfaz.Boton)) Campeonato.MotorNuevo(p);
             GUI.enabled = true;
             y += 42;
@@ -723,7 +810,92 @@ namespace F1.Juego
             if (GUI.Button(new Rect(r.x + 238, r.yMax - 48, 212, 34), "Guardar y salir", Interfaz.Boton)) { Guardar(); pantalla = Pantalla.Portada; }
 
             Tablas(new Rect(A - 470, 14, 456, H - 28));
+            PanelDirectiva(new Rect(r.xMax + 14, 14, A - 470 - 28 - r.xMax, 330));
         }
+
+        /// <summary>La directiva (objetivo, confianza, su opinión) y el dinero.</summary>
+        void PanelDirectiva(Rect r)
+        {
+            if (r.width < 220f) return;
+            var p = partida;
+            Interfaz.Fondo_(r, 0.9f);
+            int pos = Campeonato.PuestoConstructores(p);
+            GUI.Label(new Rect(r.x + 16, r.y + 10, r.width - 24, 24), $"DIRECTIVA · TEMPORADA {p.temporada}", Interfaz.Subtitulo);
+            GUI.Label(new Rect(r.x + 16, r.y + 38, r.width - 24, 22), $"Objetivo <b>{p.objetivo}.º</b> · ahora <b>{pos}.º</b>", Interfaz.Normal);
+            GUI.Label(new Rect(r.x + 16, r.y + 64, 90, 20), "Confianza", Interfaz.Pequeno);
+            var barra = new Rect(r.x + 96, r.y + 68, r.width - 150, 10);
+            Interfaz.Rect(barra, new Color(1, 1, 1, 0.08f));
+            Color c = p.confianza >= 60f ? new Color(0.35f, 0.8f, 0.4f) : p.confianza >= 30f ? new Color(0.95f, 0.75f, 0.2f) : Interfaz.Rojo;
+            Interfaz.Rect(new Rect(barra.x, barra.y, barra.width * p.confianza / 100f, barra.height), c);
+            GUI.Label(new Rect(barra.xMax + 8, r.y + 62, 50, 20), $"{p.confianza:F0}", Interfaz.Normal);
+            GUI.Label(new Rect(r.x + 16, r.y + 90, r.width - 28, 70), $"<i>{p.mensajeDirectiva}</i>", Interfaz.Normal);
+
+            float y = r.y + 168;
+            Interfaz.Rect(new Rect(r.x + 16, y, r.width - 32, 1), new Color(1, 1, 1, 0.12f));
+            GUI.Label(new Rect(r.x + 16, y + 10, r.width - 24, 24), $"PRESUPUESTO  <b>{p.presupuesto:F1} M</b>", Interfaz.Subtitulo);
+            GUI.Label(new Rect(r.x + 16, y + 38, r.width - 28, 60),
+                (p.ronda > 0 ? $"Último GP: +{p.ingresosUltimoGP:F1} M. " : "") +
+                $"Cada GP: {Campeonato.IngresoBase:F1} M fijos y {Campeonato.IngresoPorPunto:F2} M por punto. Cumplir el objetivo del año trae una prima.", Interfaz.Pequeno);
+            if (p.ronda == 0 && GUI.Button(new Rect(r.x + 16, r.yMax - 46, r.width - 32, 34), "Mercado de pilotos", Interfaz.Boton))
+            { scroll = Vector2.zero; mercadoMio = ""; pantalla = Pantalla.Mercado; }
+        }
+
+        // ── Mercado de pilotos (antes del primer GP de cada temporada) ─────────
+
+        string mercadoMio = "", mercadoAviso = "";
+
+        void Mercado()
+        {
+            var p = partida;
+            Interfaz.Rect(new Rect(0, 0, A, H), new Color(0.03f, 0.035f, 0.05f, 0.9f));
+            Cabecera("Mercado de pilotos", $"Temporada {p.temporada} · presupuesto {p.presupuesto:F1} M. Elige a cuál de tus pilotos sustituyes y a quién fichas: el tuyo se va a su equipo.");
+            var mios = p.pilotos.Where(x => x.equipo == p.equipoJugador).ToArray();
+            var mio = p.MiEquipo;
+            for (int k = 0; k < mios.Length; k++)
+            {
+                var caja = new Rect(24 + k * 300, 100, 290, 84);
+                bool sel = mercadoMio == mios[k].nombre;
+                Interfaz.Rect(caja, sel ? new Color(0.5f, 0.08f, 0.1f, 0.9f) : Interfaz.FondoClaro);
+                Interfaz.FotoPiloto(new Rect(caja.x + 8, caja.y + 8, 70, 66), mios[k], mio.color);
+                GUI.Label(new Rect(caja.x + 88, caja.y + 10, 200, 22), $"<b>{mios[k].nombre}</b>", Interfaz.Normal);
+                Interfaz.Barra(new Rect(caja.x + 88, caja.y + 36, 190, 14), "Ritmo", Nivel(mios[k]), Interfaz.ColorDe(mio.color));
+                if (GUI.Button(caja, GUIContent.none, GUIStyle.none)) mercadoMio = sel ? "" : mios[k].nombre;
+            }
+            GUI.Label(new Rect(640, 110, A - 660, 60), string.IsNullOrEmpty(mercadoMio) ? "Pulsa uno de tus pilotos para ver a quién puedes fichar en su lugar." : $"<color=#e55>{mercadoAviso}</color>", Interfaz.Normal);
+
+            if (!string.IsNullOrEmpty(mercadoMio))
+            {
+                var actual = mios.First(x => x.nombre == mercadoMio);
+                var otros = p.pilotos.Where(x => x.equipo != p.equipoJugador).OrderBy(x => x.ritmo).ToArray();
+                const float fila = 40f;
+                var vista = new Rect(24, 200, A - 48, H - 260);
+                scroll = GUI.BeginScrollView(vista, scroll, new Rect(0, 0, vista.width - 20, otros.Length * fila));
+                for (int i = 0; i < otros.Length; i++)
+                {
+                    var o = otros[i];
+                    var e = p.equipos.First(x => x.id == o.equipo);
+                    float y = i * fila;
+                    Interfaz.Rect(new Rect(0, y, vista.width - 20, fila - 4), new Color(1, 1, 1, i % 2 == 0 ? 0.04f : 0.02f));
+                    Interfaz.FotoPiloto(new Rect(6, y + 2, 34, 32), o, e.color);
+                    GUI.Label(new Rect(50, y + 8, 220, 22), o.nombre, Interfaz.Normal);
+                    GUI.Label(new Rect(270, y + 8, 160, 22), $"<color=#{ColorUtility.ToHtmlStringRGB(Interfaz.ColorDe(e.color))}>{e.nombre}</color>", Interfaz.Normal);
+                    Interfaz.Barra(new Rect(440, y + 10, 260, 14), "Ritmo", Nivel(o), Interfaz.ColorDe(e.color));
+                    float coste = Campeonato.CosteFichaje(actual, o);
+                    GUI.Label(new Rect(720, y + 8, 110, 22), $"<b>{coste:F1} M</b>", Interfaz.Normal);
+                    GUI.enabled = p.presupuesto >= coste;
+                    if (GUI.Button(new Rect(vista.width - 180, y + 3, 150, fila - 10), "Fichar", Interfaz.Boton))
+                    {
+                        if (Campeonato.Fichar(p, actual.nombre, o.nombre)) { mercadoAviso = $"{o.nombre} ficha por {mio.nombre}; {actual.nombre} se va a {e.nombre}."; mercadoMio = ""; Guardar(); }
+                    }
+                    GUI.enabled = true;
+                }
+                GUI.EndScrollView();
+            }
+            if (GUI.Button(new Rect(A - 300, H - 56, 276, 42), "Empezar la temporada", Interfaz.BotonGrande)) { mercadoAviso = ""; IrATemporada(); }
+        }
+
+        /// <summary>El ritmo del piloto como barra de 0 a 1 (0,28 % más rápido que la media, lleno).</summary>
+        static float Nivel(Piloto x) => Mathf.Clamp01(0.55f - x.ritmo * 1.6f);
 
         void Opcion(Rect r, ref string valor, string esta, string rotulo)
         {
@@ -818,7 +990,7 @@ namespace F1.Juego
             GUI.Label(new Rect(r.x + 22, r.y + 14, 400, 20), enCampeonato ? $"CAMPEONATO · RONDA {gpActual.ronda} DE {calendario.carreras.Length}" : "GRAN PREMIO SUELTO", Interfaz.Pequeno);
             Interfaz.BanderaEn(new Rect(r.x + 22, r.y + 42, 42, 28), datos.bandera);
             GUI.Label(new Rect(r.x + 76, r.y + 36, r.width - 90, 36), Corto(gpActual.granPremio), Interfaz.Grande);
-            GUI.Label(new Rect(r.x + 76, r.y + 70, r.width - 90, 20), $"{datos.nombre} · {datos.longitudMedida / 1000f:F3} km · {Curvas()} curvas aprox.", Interfaz.Pequeno);
+            GUI.Label(new Rect(r.x + 76, r.y + 70, r.width - 90, 20), $"{datos.nombre} · {datos.longitudMedida / 1000f:F3} km · {Curvas()} curvas aprox. · previsión: {(lluvia ? "<color=#8cf><b>LLUVIA</b></color>" : "<b>seco</b>")}", Interfaz.Pequeno);
             var plano = PlanoImagen(datos.id);
             var zona = new Rect(r.x + 22, r.y + 100, r.width - 44, (r.width - 44) * 0.51f);
             Interfaz.Rect(zona, new Color(0.92f, 0.93f, 0.95f));
@@ -826,7 +998,8 @@ namespace F1.Juego
             float y = zona.yMax + 16;
             GUI.Label(new Rect(r.x + 22, y, r.width - 44, 90),
                 $"Circuito {(datos.Urbano ? "urbano" : "permanente")} y {TipoCircuito(circuito)}. La pole de 2025 fue de <b>{(datos.poleReferencia > 0 ? Crono(datos.poleReferencia) : "—")}</b>.\n" +
-                "Primero la clasificación a una vuelta, que decide la parrilla; después, 3 vueltas con salida parada.", Interfaz.Normal);
+                $"Primero la clasificación a una vuelta, que decide la parrilla; después, {carrera.Vueltas} vueltas con salida parada." +
+                (lluvia ? " <color=#8cf>Con lluvia cuenta más el piloto que el coche.</color>" : ""), Interfaz.Normal);
             if (!enCampeonato) ElegirMuro(new Rect(r.x + 22, r.yMax - 228, r.width - 44, 76));
             if (GUI.Button(new Rect(r.x + 22, r.yMax - 144, r.width - 44, 44), "Ver la clasificación en pista", Interfaz.BotonGrande)) VerClasificacion();
             if (GUI.Button(new Rect(r.x + 22, r.yMax - 94, r.width - 44, 38), "Ir a la parrilla de salida (sin ver la clasificación)", Interfaz.Boton)) IrAParrilla();
@@ -898,6 +1071,41 @@ namespace F1.Juego
             }
         }
 
+        static readonly Carrera.Compuesto[] Secos = { Carrera.Compuesto.Blando, Carrera.Compuesto.Medio, Carrera.Compuesto.Duro };
+
+        /// <summary>
+        /// Con qué gomas salen tus pilotos (si llevas un muro). Solo antes de que empiece la carrera:
+        /// en la parrilla. Los rivales ya han elegido y se ve en la lista.
+        /// </summary>
+        void NeumaticosDeSalida(Rect r)
+        {
+            if (EquipoRadio == null || r.width < 300f || carrera.Tiempo > 0f) return;
+            Interfaz.Fondo_(r, 0.9f);
+            GUI.Label(new Rect(r.x + 16, r.y + 10, r.width - 24, 24), "NEUMÁTICOS DE SALIDA", Interfaz.Subtitulo);
+            if (carrera.Lluvia)
+            {
+                GUI.Label(new Rect(r.x + 16, r.y + 40, r.width - 28, 60), "Carrera en mojado: todos salen con gomas de lluvia.", Interfaz.Normal);
+                return;
+            }
+            GUI.Label(new Rect(r.x + 16, r.y + 36, r.width - 28, 54),
+                $"{ReproductorCarrera.Goma(Carrera.Compuesto.Blando)} vuela al salir y cae en la última vuelta.  " +
+                $"{ReproductorCarrera.Goma(Carrera.Compuesto.Medio)} equilibrado.  " +
+                $"{ReproductorCarrera.Goma(Carrera.Compuesto.Duro)} lento al salir, constante. Atacar por radio las gasta antes.", Interfaz.Pequeno);
+            float y = r.y + 96;
+            string[] nombres = { "Blando", "Medio", "Duro" };
+            for (int i = 0; i < carrera.Coches.Length; i++)
+            {
+                var co = carrera.Coches[i];
+                if (co.equipo.id != EquipoRadio) continue;
+                GUI.Label(new Rect(r.x + 16, y + 4, 140, 22), $"<b>{co.piloto.corto}</b>", Interfaz.Celda);
+                for (int k = 0; k < Secos.Length; k++)
+                    if (GUI.Button(new Rect(r.x + 150 + k * 84, y, 80, 28), nombres[k], co.goma == Secos[k] ? Interfaz.BotonSel : Interfaz.Boton))
+                        carrera.Gomas(i, Secos[k]);
+                y += 36;
+            }
+            GUI.Label(new Rect(r.x + 16, y + 2, r.width - 28, 40), "<color=#9aa>Si no eliges, salen con lo que ha decidido el equipo.</color>", Interfaz.Pequeno);
+        }
+
         void PantallaClasificacion()
         {
             var r = new Rect(14, 14, 560, H - 28);
@@ -927,7 +1135,9 @@ namespace F1.Juego
                 GUI.Label(new Rect(r.x + 270, y, 110, f), $"<color=#9aa>{v.equipo.nombre}</color>", Interfaz.Celda);
                 GUI.Label(new Rect(r.x + 390, y, 80, f), $"+{v.segundos - pole:F3}", Interfaz.Celda);
                 if (v.error) GUI.Label(new Rect(r.x + 458, y, 100, f), "<color=#f96>se fue largo</color>", Interfaz.Celda);
+                GUI.Label(new Rect(r.x + 372, y, 18, f), ReproductorCarrera.Goma(carrera.Coches[System.Array.FindIndex(carrera.Coches, co => co.piloto == v.piloto)].goma), Interfaz.Celda);
             }
+            NeumaticosDeSalida(new Rect(r.xMax + 16, 14, Mathf.Min(420f, A - r.xMax - 300f), 230));
             if (GUI.Button(new Rect(r.x + 22, r.yMax - 98, r.width - 44, 44), "Ver la carrera", Interfaz.BotonGrande)) VerCarrera();
             if (GUI.Button(new Rect(r.x + 22, r.yMax - 48, r.width - 44, 34), "Saltar al resultado final", Interfaz.Boton)) IrAlResultado();
         }
@@ -954,7 +1164,7 @@ namespace F1.Juego
         /// </summary>
         void Radio()
         {
-            var r = new Rect(12, 62, 372, 196);
+            var r = new Rect(12, 62, 372, 290);
             Interfaz.Fondo_(r, 0.85f);
             GUI.Label(new Rect(r.x + 14, r.y + 8, 300, 22), "RADIO DEL MURO", Interfaz.Subtitulo);
             float y = r.y + 36;
@@ -966,10 +1176,19 @@ namespace F1.Juego
                 Interfaz.Rect(new Rect(r.x + 14, y + 4, 4, 16), Interfaz.ColorDe(co.equipo.color));
                 string estado = co.fuera ? " <color=#e66>fuera</color>" : co.terminado ? " <color=#9aa>en meta</color>" : "";
                 GUI.Label(new Rect(r.x + 24, y + 2, 300, 20), $"<b>{co.piloto.corto}</b>{estado}", Interfaz.Celda);
+                // Lo que hace falta para decidir: quién tiene cerca y cómo van sus gomas.
+                if (!co.fuera && !co.terminado)
+                {
+                    var (delante, detras) = carrera.Huecos(i);
+                    string H(float s) => s > 9f ? "solo" : $"{s:F1} s";
+                    string drs = delante < 1f ? " <color=#6c6>DRS</color>" : "";
+                    GUI.Label(new Rect(r.x + 140, y + 3, 230, 20),
+                        $"<size=11><color=#9aa>delante {H(delante)}{drs} · detrás {H(detras)} · {ReproductorCarrera.Goma(co.goma)} {Mathf.Min(99f, co.desgaste * 33f):F0} %</color></size>", Interfaz.Celda);
+                }
                 y += 22;
                 GUI.enabled = !co.fuera && !co.terminado;
                 for (int k = 0; k < Ordenes.Length; k++)
-                    if (GUI.Button(new Rect(r.x + 14 + k * 87, y, 83, 26), nombres[k], co.radio == Ordenes[k] ? Interfaz.BotonSel : Interfaz.Boton))
+                    if (GUI.Button(new Rect(r.x + 14 + k * 87, y, 83, 26), new GUIContent(nombres[k], AyudaRadio[k]), co.radio == Ordenes[k] ? Interfaz.BotonSel : Interfaz.Boton))
                         carrera.Radio(i, Ordenes[k]);
                 GUI.enabled = true;
                 y += 34;
@@ -979,12 +1198,26 @@ namespace F1.Juego
             GUI.Label(new Rect(r.x + 14, y, 200, 18), "Orden de equipo", Interfaz.Pequeno);
             y += 18;
             string actual = Prioridad;
-            if (GUI.Button(new Rect(r.x + 14, y, 110, 26), "Libre", actual == "" ? Interfaz.BotonSel : Interfaz.Boton))
+            if (GUI.Button(new Rect(r.x + 14, y, 110, 26), new GUIContent("Libre", "Libre: tus dos pilotos pueden pelearse entre ellos."), actual == "" ? Interfaz.BotonSel : Interfaz.Boton))
             { Prioridad = ""; carrera.Prioridad(EquipoRadio, null); }
             for (int k = 0; k < mis.Length && k < 2; k++)
-                if (GUI.Button(new Rect(r.x + 128 + k * 116, y, 112, 26), "Manda " + mis[k].corto.Split(' ').Last(), actual == mis[k].nombre ? Interfaz.BotonSel : Interfaz.Boton))
+                if (GUI.Button(new Rect(r.x + 128 + k * 116, y, 112, 26),
+                    new GUIContent("Manda " + mis[k].corto.Split(' ').Last(), $"Manda {mis[k].corto}: su compañero no le ataca y, si le alcanza más rápido, le deja pasar. Útil para jugarte un podio o el campeonato con uno."),
+                    actual == mis[k].nombre ? Interfaz.BotonSel : Interfaz.Boton))
                 { Prioridad = mis[k].nombre; carrera.Prioridad(EquipoRadio, mis[k].nombre); }
+            // Qué hace la orden que hay bajo el ratón (o una pista si no hay ninguna).
+            y += 34;
+            string ayuda = string.IsNullOrEmpty(GUI.tooltip) ? "Pasa el ratón por una orden para ver qué hace y cuándo conviene." : GUI.tooltip;
+            GUI.Label(new Rect(r.x + 14, y, r.width - 26, r.yMax - y - 6), $"<size=11>{ayuda}</size>", Interfaz.Pequeno);
         }
+
+        static readonly string[] AyudaRadio =
+        {
+            "<b>Ataca</b>: más ritmo y el doble de intentos de adelantar, pero más errores, gasta las gomas antes y, en el campeonato, el motor. Úsala con alguien a menos de 1 s delante (DRS) o en la última vuelta.",
+            "<b>Normal</b>: ni gana ni pierde. Para cuando no pasa nada cerca.",
+            "<b>Defiende</b>: al de detrás le cuesta mucho más ganarte la frenada; casi sin riesgo. Úsala con alguien más rápido a menos de 1 s detrás, sobre todo en la última vuelta.",
+            "<b>Ahorra</b>: algo más lento, pero casi no falla, las gomas duran más y cuida el motor. Úsala si vas solo, detrás del coche de seguridad, o para guardar gomas y atacar al final.",
+        };
 
         void PantallaResultado()
         {
@@ -1061,7 +1294,30 @@ namespace F1.Juego
                 GUI.Label(new Rect(r.x + 370, y + i * 21, 160, 21), (yo ? "<b>" : "") + e.nombre + (yo ? "</b>" : ""), Interfaz.Celda);
                 GUI.Label(new Rect(r.x + 540, y + i * 21, 60, 21), $"<b>{tc[i].puntos}</b>", Interfaz.Celda);
             }
-            if (GUI.Button(new Rect(r.x + 24, r.yMax - 54, r.width - 48, 42), "Volver a la portada", Interfaz.BotonGrande)) pantalla = Pantalla.Portada;
+            float yd = y + 11 * 21 + 10;
+            GUI.Label(new Rect(r.x + 24, yd, r.width - 48, 44), $"<i>{partida.mensajeDirectiva}</i>", Interfaz.Normal);
+            yd += 46;
+            foreach (var h in partida.historial.Skip(Math.Max(0, partida.historial.Count - 4)))
+            {
+                string ok = h.puesto <= h.objetivo ? "<color=#6c6>cumplido</color>" : "<color=#e66>fallado</color>";
+                GUI.Label(new Rect(r.x + 24, yd, r.width - 48, 20), $"<color=#9aa>{h.temporada}</color>  {h.puesto}.º (objetivo {h.objetivo}.º, {ok}) · campeón {h.campeonPiloto}, {h.campeonEquipo}", Interfaz.Pequeno);
+                yd += 19;
+            }
+            if (partida.despedido)
+            {
+                if (GUI.Button(new Rect(r.x + 24, r.yMax - 54, r.width - 48, 42), "Fin: volver a la portada", Interfaz.BotonGrande)) pantalla = Pantalla.Portada;
+                return;
+            }
+            if (GUI.Button(new Rect(r.x + 24, r.yMax - 54, r.width - 260, 42), $"Siguiente temporada ({partida.temporada + 1})", Interfaz.BotonGrande))
+            {
+                Campeonato.NuevaTemporada(partida);
+                Guardar();
+                scroll = Vector2.zero; mercadoMio = ""; mercadoAviso = "";
+                MostrarCircuito(partida.calendario[0], CamaraCircuito.Modo.Orbita);
+                gpActual = calendario.carreras[0];
+                pantalla = Pantalla.Mercado;
+            }
+            if (GUI.Button(new Rect(r.xMax - 228, r.yMax - 54, 204, 42), "Volver a la portada", Interfaz.Boton)) pantalla = Pantalla.Portada;
         }
 
         static string Crono(float s) => $"{(int)(s / 60)}:{s % 60:00.000}";

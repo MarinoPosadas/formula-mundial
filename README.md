@@ -23,14 +23,20 @@ carrera** (se crean en modo aditivo: no tocan la escena que haya abierta).
 
 - **Gran Premio suelto**: eliges circuito; forma del día, afinidades y semilla nuevas cada vez.
 - **Campeonato**: eliges escudería y, antes de cada GP, decides:
-  - **Desarrollo**: 10 puntos por ronda entre motor y aerodinámica (lo que no se gasta se pierde;
-    los rivales desarrollan solos).
+  - **Desarrollo**: hasta 10 puntos por ronda entre motor y aerodinámica, a 0,3 M cada uno; rinde
+    más cuanto más atrás está el coche (×0,6 el mejor, ×1,4 el peor). Los rivales desarrollan solos.
   - **Carga aerodinámica** del GP: baja (recta), media, alta (curva). Acertar con el circuito vale
     ~0,2 % de vuelta; los rivales aciertan el 60 %.
   - **Modo de motor**: conservador / normal / agresivo. El precio del agresivo es el desgaste, que
     se arrastra y multiplica las averías. Motor nuevo: 4 gratis; desde el quinto, 5 puestos de
     parrilla.
   - **Órdenes de equipo**: carrera libre o prioridad para uno de tus pilotos.
+  - **La directiva** pide un puesto de constructores (el del coche por ritmo el primer año; luego,
+    entre lo conseguido y lo que vale el coche). Su confianza sube o baja tras cada GP; cumplir el
+    año da +15 y una prima, fallarlo −10 por puesto; acabar el año sin confianza es el despido.
+  - **Dinero**: 2,5 M por GP más 0,08 M por punto; se gasta en desarrollo, motores (3 M) y fichajes.
+  - **Varias temporadas**: al acabar, la siguiente (los coches se acercan; el tuyo conserva más de
+    lo desarrollado) y un **mercado de pilotos** antes del primer GP.
 - **Clasificación en pista**: los 22 salen por turno a su vuelta lanzada (los más lentos primero,
   con algo de mezcla) y la torre se reordena al cruzar cada uno; cada vuelta dura exactamente lo
   que decidió la simulación. La tanda cabe en una vuelta para que nadie se cruce. Después, la
@@ -46,6 +52,20 @@ carrera** (se crean en modo aditivo: no tocan la escena que haya abierta).
   sigue, con su escudería, puesto, diferencia y velocidad.
 - **Incidencias**: rótulo grande (abandono, se va largo, toque) y la cámara automática corta al
   coche un segundo antes. El que se va largo se abre hacia la escapatoria también en carrera.
+- **En carrera**: la salida cuenta (reflejos y malas salidas); los adelantamientos se deciden en
+  la frenada (ataque contra defensa) y hay DRS desde la segunda vuelta a menos de 1 s; coche de
+  seguridad (por accidente o al azar) que reagrupa y relanza; lluvia según el circuito (Spa,
+  Silverstone, Interlagos… mucho más que el desierto), en la que pesa más el piloto que el coche.
+- **Realización**: la cámara automática va a la pelea más apretada (menos de 1 s, mejor si es por
+  los primeros puestos) y se queda en ella; un rótulo dice qué puesto se juega y a cuánto; un
+  comentarista resume los momentos clave (nuevo líder, coche de seguridad, relanzada, última
+  vuelta, errores de los de delante, el ganador). Las incidencias siguen teniendo prioridad.
+- **Duración** (Opciones): carreras de 3, 5 o 10 vueltas; el campeonato la fija al crearse. El
+  desgaste de gomas, las averías y el desgaste de motor por radio se reescalan para que por
+  carrera sean iguales: con más vueltas hay más carrera (10 vueltas: 1,4 cambios de líder y 46
+  adelantamientos por carrera; 3 vueltas: 0,9 y 23), no más roturas.
+- **Neumáticos de salida** (en la parrilla, para tus pilotos): blando (vuela al salir y cae en la
+  última vuelta), medio o duro (lento al salir, constante). Atacar por radio las gasta antes.
 - **Radio del muro**, en la carrera del campeonato o, en un GP suelto, de la escudería que se elija en la presentación: a cada uno de tus pilotos, *ataca* (más
   ritmo y el doble de intentos de adelantar, pero más errores y desgaste de motor), *defiende*
   (más difícil de pasar), *ahorra* (más lento, casi no falla y cuida el motor) o *normal*; y la
@@ -86,10 +106,16 @@ carrera** (se crean en modo aditivo: no tocan la escena que haya abierta).
 - Perfil de velocidad: un solo juego de parámetros da las poles de 2025 con error medio 0 % y
   dispersión 3 %; cada circuito se ajusta a su pole. El agarre a alta velocidad es un parámetro
   efectivo (~7,8 g), más que un F1 real: compensa curvas que el GPS suavizado cierra de más.
-- Carrera (480 GP): McLorin 52 % de victorias, Rad Bull 32 %, Marcedes 12 %, Ferrani 3 %; 9
-  adelantamientos por carrera; 0 solapes; el poleman gana el 85 % (3 vueltas).
-- Campeonato (Willians, 30 temporadas): sin decisiones 21 puntos; desarrollando 95; acertando la
-  carga 119; agresivo gestionando motores 129; fallando la carga 77.
+- Carrera (240 GP, 13-10-2026, con lluvia según el circuito): el poleman gana el 54 %, 0,83 cambios
+  de líder y 23 adelantamientos por carrera, el podio repite el top 3 de parrilla en el 40 %;
+  McLorin 41 % de victorias, Rad Bull 40 %, Marcedes 12 %, Ferrani 7 %; coche de seguridad en el
+  30 %. Antes de la salida variable, los neumáticos, la frenada y el coche de seguridad: 85 % y
+  0,16 cambios de líder (la carrera copiaba la clasificación).
+- El azar (`Azar`) es xoshiro256**: con `System.Random` la estadística cambiaba según cómo se
+  eligieran las semillas (el poleman ganaba el 98 % o el 63 % con el mismo juego).
+- Campeonato (arnés de 3 temporadas, 6 partidas por equipo, 13-10-2026), gastando todo en
+  desarrollo y acertando la carga: Willians 5.º → 4,3.º → 3,7.º; Ferrani 3,3.º → 2,3.º; Cadillan
+  11.º → 9,7.º → 7,2.º. Sin hacer nada, a Willians y Ferrani los despiden al segundo año.
 
 ## Licencia
 

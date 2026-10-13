@@ -55,9 +55,10 @@ namespace F1.Juego
         {
             RenderSettings.fog = activa;
             RenderSettings.fogMode = FogMode.Linear;
-            RenderSettings.fogColor = ColorNiebla;
-            RenderSettings.fogStartDistance = 900f;
-            RenderSettings.fogEndDistance = 13000f;
+            // Con lluvia, gris y mucho más cerca.
+            RenderSettings.fogColor = Lluvia.Activa ? new Color(0.52f, 0.55f, 0.6f) : ColorNiebla;
+            RenderSettings.fogStartDistance = Lluvia.Activa ? 60f : 900f;
+            RenderSettings.fogEndDistance = Lluvia.Activa ? 1800f : 13000f;
         }
 
         static Mesh Mar(Vector3 dir, float linea)

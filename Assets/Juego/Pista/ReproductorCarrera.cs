@@ -37,6 +37,22 @@ namespace F1.Juego
         /// <summary>Favoritos del GP (estrellas en la torre); null si no se han calculado.</summary>
         public Favoritos favoritos;
 
+        /// <summary>La goma en una letra de su color (B roja, M amarilla, D blanca, LL azul).</summary>
+        public static string Goma(Carrera.Compuesto g) => g switch
+        {
+            Carrera.Compuesto.Blando => "<color=#ff4040><b>B</b></color>",
+            Carrera.Compuesto.Duro => "<color=#f2f2f2><b>D</b></color>",
+            Carrera.Compuesto.Lluvia => "<color=#4aa8ff><b>LL</b></color>",
+            _ => "<color=#ffd84a><b>M</b></color>",
+        };
+
+        /// <summary>¿Está el coche de seguridad en pista en este instante (de los que se ven)?</summary>
+        bool SeguridadEnPista(float ahora)
+        {
+            var u = carrera.Sucesos.FindLast(x => (x.tipo == Carrera.Tipo.CocheSeguridad || x.tipo == Carrera.Tipo.Relanzada) && x.t <= ahora);
+            return u != null && u.tipo == Carrera.Tipo.CocheSeguridad;
+        }
+
         static bool EsIncidencia(Carrera.Tipo x) => x == Carrera.Tipo.Error || x == Carrera.Tipo.Toque || x == Carrera.Tipo.Abandono;
 
         /// <summary>
@@ -59,8 +75,143 @@ namespace F1.Juego
             {
                 var inc = Incidencia(ahora);
                 if (inc != null) return inc.coche;
+                var b = Pelea(ahora);
+                if (b.atacante >= 0) return b.atacante;
             }
             return OrdenActual()[0];
+        }
+
+        // ── Realización: la pelea más apretada ────────────────────────────
+
+        int peleaAtacante = -1;
+        float peleaDesde;
+        int peleaFrame = -1;
+        (int atacante, int delantero, int puesto, float hueco) peleaCache = (-1, -1, 0, 0f);
+
+        /// <summary>
+        /// La pelea que enseña la cámara automática: la pareja más junta (menos de 1 s), con
+        /// preferencia por los puestos de delante. Se queda en ella mientras siga viva (hasta 1,5 s y
+        /// 25 s como mucho) para no saltar de una a otra. El líder solo ya no es lo que se ve.
+        /// </summary>
+        (int atacante, int delantero, int puesto, float hueco) Pelea(float ahora)
+        {
+            if (peleaFrame == Time.frameCount) return peleaCache;
+            peleaFrame = Time.frameCount;
+            var orden = OrdenActual();
+            // ¿Sigue viva la de ahora?
+            if (peleaAtacante >= 0)
+            {
+                int p = Array.IndexOf(orden, peleaAtacante);
+                if (p > 0 && !Fuera(peleaAtacante, ahora) && Meta(peleaAtacante, ahora) < 0f && ahora - peleaDesde < 25f)
+                {
+                    float h = Hueco(orden[p - 1], peleaAtacante, ahora);
+                    if (h < 1.5f) return peleaCache = (peleaAtacante, orden[p - 1], p, h);
+                }
+                peleaAtacante = -1;
+            }
+            int mejor = -1;
+            float puntos = float.MaxValue, mejorHueco = 0f;
+            for (int p = 1; p < Mathf.Min(orden.Length, 14); p++)
+            {
+                int a = orden[p], d = orden[p - 1];
+                if (Fuera(a, ahora) || Fuera(d, ahora) || Meta(a, ahora) >= 0f || Meta(d, ahora) >= 0f) continue;
+                float h = Hueco(d, a, ahora);
+                if (h > 1f) continue;
+                float valor = h + 0.05f * p;
+                if (valor < puntos) { puntos = valor; mejor = p; mejorHueco = h; }
+            }
+            if (mejor < 0) return peleaCache = (-1, -1, 0, 0f);
+            peleaAtacante = orden[mejor];
+            peleaDesde = ahora;
+            return peleaCache = (peleaAtacante, orden[mejor - 1], mejor, mejorHueco);
+        }
+
+        // ── El comentarista ───────────────────────────────────────────────
+
+        /// <summary>
+        /// Una frase para los momentos que importan: nuevo líder, coche de seguridad, relanzada,
+        /// última vuelta, errores de los de delante y el ganador. Sale de los sucesos (lo que ha
+        /// pasado en la simulación), no se inventa nada.
+        /// </summary>
+        int comentarioFrame = -1;
+        (float cuando, string texto) comentarioCache;
+
+        (float cuando, string texto) Comentario(float ahora)
+        {
+            if (comentarioFrame == Time.frameCount) return comentarioCache;
+            comentarioFrame = Time.frameCount;
+            return comentarioCache = CalcularComentario(ahora);
+        }
+
+        (float cuando, string texto) CalcularComentario(float ahora)
+        {
+            string N(int i) => carrera.Coches[i].piloto.corto;
+            float L = carrera.Circuito.Trazado.Longitud;
+            float mejorT = -1f;
+            string mejorTexto = null;
+            void Si(float cuando, string texto)
+            {
+                if (cuando <= ahora && cuando > ahora - 5f && cuando > mejorT) { mejorT = cuando; mejorTexto = texto; }
+            }
+            foreach (var x in carrera.Sucesos)
+            {
+                if (x.t > ahora || x.t < ahora - 5f) continue;
+                switch (x.tipo)
+                {
+                    case Carrera.Tipo.Adelantamiento:
+                        if (LiderEn(x.t + 0.3f) == x.coche && LiderEn(x.t - 1.5f) == x.otro)
+                            Si(x.t, $"¡{N(x.coche)} se pone líder! Le ha ganado la frenada a {N(x.otro)}.");
+                        break;
+                    case Carrera.Tipo.CocheSeguridad:
+                        Si(x.t, "Coche de seguridad. El pelotón se agrupa: se acabaron las ventajas.");
+                        break;
+                    case Carrera.Tipo.Relanzada:
+                        Si(x.t, $"¡Relanzada! {N(LiderEn(x.t))} tiene que defenderse otra vez.");
+                        break;
+                    case Carrera.Tipo.Error:
+                        int pe = PuestoEn(x.coche, x.t);
+                        if (pe <= 5) Si(x.t, $"¡{N(x.coche)} se va largo! Pierde tiempo cuando iba {pe}.º.");
+                        break;
+                    case Carrera.Tipo.Meta:
+                        if (carrera.Coches[x.coche] == carrera.Resultado[0]) Si(x.t, $"¡{N(x.coche)} gana el Gran Premio!");
+                        break;
+                }
+            }
+            // Última vuelta: cuando el líder cruza la meta y empieza la última.
+            float ultima = (carrera.Vueltas - 1) * L;
+            for (float tv = Mathf.Max(0.5f, ahora - 5f); tv <= ahora; tv += 0.5f)
+            {
+                int l = LiderEn(tv);
+                if (carrera.Muestra(l, tv).d >= ultima && carrera.Muestra(l, tv - 0.5f).d < ultima)
+                {
+                    var orden = OrdenActual();
+                    if (orden.Length > 1)
+                        Si(tv, $"Última vuelta: {N(orden[0])} lidera con {Hueco(orden[0], orden[1], ahora):F1} s sobre {N(orden[1])}.");
+                }
+            }
+            return (mejorT, mejorTexto);
+        }
+
+        int LiderEn(float tiempo)
+        {
+            int mejor = 0;
+            float d = float.MinValue;
+            for (int i = 0; i < carrera.Coches.Length; i++)
+            {
+                if (Fuera(i, tiempo)) continue;
+                float di = carrera.Muestra(i, Mathf.Max(0f, tiempo)).d;
+                if (di > d) { d = di; mejor = i; }
+            }
+            return mejor;
+        }
+
+        int PuestoEn(int coche, float tiempo)
+        {
+            float d = carrera.Muestra(coche, Mathf.Max(0f, tiempo)).d;
+            int p = 1;
+            for (int i = 0; i < carrera.Coches.Length; i++)
+                if (i != coche && !Fuera(i, tiempo) && carrera.Muestra(i, Mathf.Max(0f, tiempo)).d > d) p++;
+            return p;
         }
         public int VelocidadIndice { get => velocidad; set => velocidad = Mathf.Clamp(value, 0, Velocidades.Length - 1); }
 
@@ -171,7 +322,8 @@ namespace F1.Juego
             Interfaz.Fondo_(torre, 0.85f);
             int vueltaLider = Mathf.Clamp(Mathf.FloorToInt(Mathf.Max(0f, carrera.Muestra(orden[0], ahora).d) / L) + 1, 1, carrera.Vueltas);
             GUI.Label(new Rect(torre.x + 14, torre.y + 8, 220, 24),
-                t < 0f ? "PARRILLA" : Terminada ? "BANDERA A CUADROS" : $"VUELTA {vueltaLider}/{carrera.Vueltas}", Interfaz.Subtitulo);
+                t < 0f ? "PARRILLA" : Terminada ? "BANDERA A CUADROS" :
+                SeguridadEnPista(ahora) ? $"<color=#fd3>COCHE DE SEGURIDAD</color> <size=12>V{vueltaLider}</size>" : $"VUELTA {vueltaLider}/{carrera.Vueltas}", Interfaz.Subtitulo);
             for (int p = 0; p < orden.Length; p++)
             {
                 int i = orden[p];
@@ -188,7 +340,7 @@ namespace F1.Juego
                 Interfaz.Rect(new Rect(torre.x + 34, y + 3, 4, fila - 7), Interfaz.ColorDe(co.equipo.color));
                 GUI.Label(new Rect(torre.x + 10, y + 2, 24, fila), $"{p + 1}", Interfaz.Celda);
                 string estrellas = favoritos != null ? " " + Interfaz.Estrellas(favoritos.Estrellas(co.piloto.nombre)) : "";
-                if (GUI.Button(new Rect(torre.x + 44, y + 2, 122, fila), $"{(sel ? "<b>" : "")}{co.piloto.corto}{(sel ? "</b>" : "")}<size=9>{estrellas}</size>", Interfaz.Celda))
+                if (GUI.Button(new Rect(torre.x + 44, y + 2, 122, fila), $"{(sel ? "<b>" : "")}{co.piloto.corto}{(sel ? "</b>" : "")}<size=9>{estrellas}</size> <size=10>{Goma(co.goma)}</size>", Interfaz.Celda))
                 {
                     // Elegir un piloto: la cámara de detrás del coche, para ver su carrera.
                     if (seguido == i) seguido = -1;
@@ -228,6 +380,42 @@ namespace F1.Juego
                                  inc.tipo == Carrera.Tipo.Toque ? $"alerón dañado · vuelta {inc.vuelta}" : $"pierde tiempo · vuelta {inc.vuelta}";
                 float edad = ahora - inc.t, alfa = Mathf.Clamp01(Mathf.Min(edad * 4f, (4f - edad) * 2f));
                 Interfaz.Incidencia(new Rect(ancho - 262 - 14 - 450, 86, 450, 60), titulo, co.piloto, co.equipo, detalle, alfa);
+            }
+
+            // Coche de seguridad: rótulo amarillo al salir y al relanzar (4 s).
+            var sc = carrera.Sucesos.FindLast(x => (x.tipo == Carrera.Tipo.CocheSeguridad || x.tipo == Carrera.Tipo.Relanzada) && x.t <= ahora && x.t > ahora - 4f);
+            if (sc != null && t >= 0f)
+            {
+                var caja = new Rect(ancho - 262 - 14 - 450, inc != null ? 152 : 86, 450, 46);
+                Interfaz.Rect(caja, new Color(0.16f, 0.14f, 0.02f, 0.92f));
+                Interfaz.Rect(new Rect(caja.x, caja.y, caja.width, 3), new Color(1f, 0.85f, 0.15f));
+                GUI.Label(new Rect(caja.x + 14, caja.y + 10, caja.width - 20, 28), sc.tipo == Carrera.Tipo.CocheSeguridad
+                    ? "<color=#fd3><b>COCHE DE SEGURIDAD</b></color>  <size=13>en pista: no se adelanta</size>"
+                    : "<color=#fd3><b>RELANZADA</b></color>  <size=13>¡vuelven a correr!</size>", Interfaz.Subtitulo);
+            }
+
+            // La pelea que sigue la cámara automática y el comentarista, abajo en el centro.
+            if (t >= 0f && !Terminada)
+            {
+                (int atacante, int delantero, int puesto, float hueco) b = seguido < 0 && Incidencia(ahora) == null ? Pelea(ahora) : (-1, -1, 0, 0f);
+                float yAbajo = alto - 70f;
+                if (b.atacante >= 0)
+                {
+                    var caja = new Rect(ancho / 2f - 230f, yAbajo - 40f, 460f, 34f);
+                    Interfaz.Rect(caja, new Color(0.02f, 0.03f, 0.05f, 0.85f));
+                    Interfaz.Rect(new Rect(caja.x, caja.y, 5f, caja.height), Interfaz.ColorDe(carrera.Coches[b.atacante].equipo.color));
+                    Interfaz.Rect(new Rect(caja.xMax - 5f, caja.y, 5f, caja.height), Interfaz.ColorDe(carrera.Coches[b.delantero].equipo.color));
+                    GUI.Label(new Rect(caja.x + 14, caja.y + 8, caja.width - 28, 22),
+                        $"<color=#e33><b>LUCHA POR EL {b.puesto}.º</b></color>   <b>{carrera.Coches[b.atacante].piloto.corto}</b> a {b.hueco:F1} s de <b>{carrera.Coches[b.delantero].piloto.corto}</b>", Interfaz.Normal);
+                    yAbajo -= 44f;
+                }
+                var com = Comentario(ahora);
+                if (com.texto != null)
+                {
+                    var caja = new Rect(ancho / 2f - 300f, yAbajo - 40f, 600f, 34f);
+                    Interfaz.Rect(caja, new Color(1f, 1f, 1f, 0.92f));
+                    GUI.Label(new Rect(caja.x + 14, caja.y + 7, caja.width - 28, 24), $"<color=#111><i>«{com.texto}»</i></color>", Interfaz.Normal);
+                }
             }
 
             // Sucesos recientes, abajo a la izquierda.
@@ -290,6 +478,8 @@ namespace F1.Juego
                 case Carrera.Tipo.Abandono: return $"Vuelta {s.vuelta}: <color=#e66><b>{a}</b> abandona ({s.texto})</color>";
                 case Carrera.Tipo.OrdenDeEquipo: return $"Vuelta {s.vuelta}: orden de equipo, {carrera.Coches[s.otro].piloto.corto} deja pasar a <b>{a}</b>";
                 case Carrera.Tipo.Radio: return $"<color=#8cf>Radio a <b>{a}</b>: {Radio(s.texto)}</color>";
+                case Carrera.Tipo.CocheSeguridad: return $"Vuelta {s.vuelta}: <color=#fd3><b>coche de seguridad</b></color>";
+                case Carrera.Tipo.Relanzada: return $"Vuelta {s.vuelta}: <color=#fd3><b>relanzada</b></color>";
                 default: return "";
             }
         }

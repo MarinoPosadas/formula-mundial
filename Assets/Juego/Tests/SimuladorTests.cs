@@ -63,9 +63,11 @@ namespace F1.Tests
             foreach (var co in ca.Coches)
                 Assert.IsTrue(co.terminado || co.fuera, $"{co.piloto.corto} ni acabó ni abandonó");
             var g = ca.Resultado[0];
-            // 3 vueltas a ritmo de carrera (+2 %) más la salida parada: entre +1 % y +8 % de 3 referencias.
+            // 3 vueltas a ritmo de carrera (+2 %) más la salida parada: entre +1 % y +8 % de 3 referencias;
+            // con coche de seguridad (30-45 s al 62 %), hasta +25 %.
             float r = g.tiempoFinal / (3f * ca.Circuito.Referencia);
-            Assert.That(r, Is.InRange(1.01f, 1.08f), $"ganador en {g.tiempoFinal:F1} s");
+            bool sc = ca.Sucesos.Exists(x => x.tipo == Carrera.Tipo.CocheSeguridad);
+            Assert.That(r, Is.InRange(1.01f, sc ? 1.25f : 1.08f), $"ganador en {g.tiempoFinal:F1} s{(sc ? " (con coche de seguridad)" : "")}");
             Assert.AreEqual(3, g.vueltas);
         }
 

@@ -230,6 +230,8 @@ namespace F1.Juego
         public static float Volumen { get => Leer("volumen", 70) / 100f; set => Guardar("volumen", Mathf.RoundToInt(value * 100)); }
         public static int Ritmo { get => Leer("ritmo", 1); set => Guardar("ritmo", value); }        // índice de x0,5 x1 x2 x4 x8
         public static int Camara { get => Leer("camara", 1); set => Guardar("camara", value); }    // modo de CamaraCircuito
+        /// <summary>Vueltas de carrera: 3, 5 o 10 (el campeonato lo fija al crearse).</summary>
+        public static int Vueltas { get => Leer("vueltas", 3); set => Guardar("vueltas", value); }
 
         static int Leer(string k, int porDefecto)
         {
