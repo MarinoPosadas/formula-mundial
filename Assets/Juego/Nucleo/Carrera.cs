@@ -266,21 +266,32 @@ namespace F1.Nucleo
         /// Segundos (aproximados) al coche de delante y al de detrás en el instante simulado, para
         /// decidir la radio. float.MaxValue si no hay nadie.
         /// </summary>
-        public (float delante, float detras) Huecos(int coche)
+        public (float delante, float detras, int quienDelante, int quienDetras) Huecos(int coche)
         {
             var co = Coches[coche];
             float v = Math.Max(20f, co.v), delante = float.MaxValue, detras = float.MaxValue;
-            foreach (var o in Coches)
+            int qd = -1, qt = -1;
+            for (int i = 0; i < Coches.Length; i++)
             {
+                var o = Coches[i];
                 if (o == co || o.fuera || o.terminado) continue;
                 float dd = o.d - co.d;
-                if (dd > 0f) delante = Math.Min(delante, dd / v);
-                else detras = Math.Min(detras, -dd / v);
+                if (dd > 0f && dd / v < delante) { delante = dd / v; qd = i; }
+                else if (dd <= 0f && -dd / v < detras) { detras = -dd / v; qt = i; }
             }
-            return (delante, detras);
+            return (delante, detras, qd, qt);
         }
 
-        /// <summary>Orden por radio a un piloto, desde este instante.</summary>
+        /// <summary>Puesto de un coche en el instante simulado (los que ya han acabado van delante).</summary>
+        public int Puesto(int coche)
+        {
+            var co = Coches[coche];
+            int p = 1;
+            foreach (var o in Coches)
+                if (o != co && !o.fuera && (o.terminado && !co.terminado || o.d > co.d)) p++;
+            return p;
+        }
+
         /// <summary>Elige los neumáticos de salida de un coche; solo antes de que empiece la carrera.</summary>
         public bool Gomas(int coche, Compuesto g)
         {

@@ -618,7 +618,10 @@ namespace F1.Juego
              "• Arriba, quién sale en cámara; abajo, la pelea que se está viendo y el comentarista; los rótulos grandes avisan de abandonos, salidas de pista y del coche de seguridad.\n\n" +
              "• <b>Ritmo</b> de x0,5 a x8, y puedes saltar al resultado en cualquier momento."),
             ("Radio del muro",
-             "Si llevas una escudería (campeonato, o el muro elegido en un GP suelto), en carrera das órdenes a cada piloto. Junto a su nombre ves a cuánto va el de delante y el de detrás (con «DRS» si está a menos de 1 s) y cómo van sus gomas.\n\n" +
+             "Si llevas una escudería, en carrera das órdenes a cada piloto. Para cada uno ves su puesto, cuánto ha gastado de gomas, quién lleva delante y detrás (y si tiene DRS), lo que aconseja el ingeniero y, bajo los botones, lo que hace la orden puesta.\n\n" +
+             "<b>Ejemplo 1.</b> Vuelta 2: Sianz a 0,6 s de Alanso, gomas al 40 %. Ataca: con DRS y el doble de intentos, lo normal es que se tire en la siguiente frenada. Si Alanso tiene buena defensa puede fallar y perder un poco; si va con gomas al 85 %, mejor esperar a la última vuelta.\n\n" +
+             "<b>Ejemplo 2.</b> Última vuelta: Albin 6.º con Gasli a 0,4 s detrás. Defiende: a Gasli le cuesta mucho más ganarle la frenada y Albin apenas pierde ritmo.\n\n" +
+             "<b>Ejemplo 3.</b> Narris va solo, a 3 s del de delante y 4 s del de detrás. Ahorra: pierde unas décimas por vuelta que no le cuestan el puesto, y llega con gomas para atacar al final (y, en el campeonato, cuida el motor).\n\n" +
              "• <b>Ataca</b>: más ritmo y el doble de intentos de adelantar; más errores y gasta gomas (y motor en el campeonato). Con alguien a menos de 1 s delante o en la última vuelta.\n\n" +
              "• <b>Normal</b>: para cuando no pasa nada cerca.\n\n" +
              "• <b>Defiende</b>: cuesta mucho más ganarte la frenada. Con alguien más rápido justo detrás, sobre todo al final.\n\n" +
@@ -1162,36 +1165,45 @@ namespace F1.Juego
         /// Atacar: más ritmo y más intentos de adelantar, pero más errores y desgaste de motor.
         /// Defender: más difícil de pasar. Ahorrar: más lento, cuida el motor y casi no falla.
         /// </summary>
+        bool radioPlegada;
+
         void Radio()
         {
-            var r = new Rect(12, 62, 372, 290);
-            Interfaz.Fondo_(r, 0.85f);
+            var r = new Rect(12, 62, 372, radioPlegada ? 40 : 422);
+            Interfaz.Fondo_(r, 0.88f);
             GUI.Label(new Rect(r.x + 14, r.y + 8, 300, 22), "RADIO DEL MURO", Interfaz.Subtitulo);
+            if (GUI.Button(new Rect(r.xMax - 84, r.y + 7, 72, 24), radioPlegada ? "Abrir" : "Plegar", Interfaz.Boton)) radioPlegada = !radioPlegada;
+            if (radioPlegada) return;
             float y = r.y + 36;
             string[] nombres = { "Ataca", "Normal", "Defiende", "Ahorra" };
             for (int i = 0; i < carrera.Coches.Length; i++)
             {
                 var co = carrera.Coches[i];
                 if (co.equipo.id != EquipoRadio) continue;
+                bool corre = !co.fuera && !co.terminado;
                 Interfaz.Rect(new Rect(r.x + 14, y + 4, 4, 16), Interfaz.ColorDe(co.equipo.color));
-                string estado = co.fuera ? " <color=#e66>fuera</color>" : co.terminado ? " <color=#9aa>en meta</color>" : "";
-                GUI.Label(new Rect(r.x + 24, y + 2, 300, 20), $"<b>{co.piloto.corto}</b>{estado}", Interfaz.Celda);
-                // Lo que hace falta para decidir: quién tiene cerca y cómo van sus gomas.
-                if (!co.fuera && !co.terminado)
+                string estado = co.fuera ? " <color=#e66>fuera</color>" : co.terminado ? " <color=#9aa>en meta</color>" : $"  <color=#9aa>{carrera.Puesto(i)}.º</color>";
+                GUI.Label(new Rect(r.x + 24, y + 2, 200, 20), $"<b>{co.piloto.corto}</b>{estado}", Interfaz.Celda);
+                if (corre)
                 {
-                    var (delante, detras) = carrera.Huecos(i);
-                    string H(float s) => s > 9f ? "solo" : $"{s:F1} s";
-                    string drs = delante < 1f ? " <color=#6c6>DRS</color>" : "";
-                    GUI.Label(new Rect(r.x + 140, y + 3, 230, 20),
-                        $"<size=11><color=#9aa>delante {H(delante)}{drs} · detrás {H(detras)} · {ReproductorCarrera.Goma(co.goma)} {Mathf.Min(99f, co.desgaste * 33f):F0} %</color></size>", Interfaz.Celda);
+                    // Las gomas, en claro: cuánto se han gastado, de verde a rojo.
+                    float gastadas = Mathf.Clamp(co.desgaste * 33f, 0f, 99f);
+                    string col = gastadas < 50f ? "6c6" : gastadas < 80f ? "fd6" : "f66";
+                    GUI.Label(new Rect(r.x + 200, y + 3, 170, 20), $"<size=11>gomas {ReproductorCarrera.Goma(co.goma)}: <color=#{col}>{gastadas:F0} % gastadas</color></size>", Interfaz.Celda);
+                    var hu = carrera.Huecos(i);
+                    string Quien(int k, float s) => k < 0 || s > 9f ? "nadie cerca" : $"{carrera.Coches[k].piloto.corto} a {s:F1} s";
+                    GUI.Label(new Rect(r.x + 24, y + 20, r.width - 34, 18),
+                        $"<size=11><color=#9aa>Delante: {Quien(hu.quienDelante, hu.delante)}{(hu.delante < 1f ? " <color=#6c6>(DRS)</color>" : "")} · Detrás: {Quien(hu.quienDetras, hu.detras)}</color></size>", Interfaz.Celda);
+                    GUI.Label(new Rect(r.x + 24, y + 37, r.width - 34, 34), $"<size=11><color=#8cf>Ingeniero: «{Consejo(i, hu)}»</color></size>", Interfaz.Pequeno);
                 }
-                y += 22;
-                GUI.enabled = !co.fuera && !co.terminado;
+                y += 72;
+                GUI.enabled = corre;
                 for (int k = 0; k < Ordenes.Length; k++)
                     if (GUI.Button(new Rect(r.x + 14 + k * 87, y, 83, 26), new GUIContent(nombres[k], AyudaRadio[k]), co.radio == Ordenes[k] ? Interfaz.BotonSel : Interfaz.Boton))
                         carrera.Radio(i, Ordenes[k]);
                 GUI.enabled = true;
-                y += 34;
+                if (corre) GUI.Label(new Rect(r.x + 14, y + 28, r.width - 24, 30), $"<size=11><color=#ccc>Ahora: {Efecto(co.radio)}</color></size>", Interfaz.Pequeno);
+                y += 58;
             }
             // Orden de equipo: quién tiene prioridad (el otro no le ataca y le cede el paso).
             var mis = carrera.Coches.Where(x => x.equipo.id == EquipoRadio).Select(x => x.piloto).ToArray();
@@ -1209,6 +1221,46 @@ namespace F1.Juego
             y += 34;
             string ayuda = string.IsNullOrEmpty(GUI.tooltip) ? "Pasa el ratón por una orden para ver qué hace y cuándo conviene." : GUI.tooltip;
             GUI.Label(new Rect(r.x + 14, y, r.width - 26, r.yMax - y - 6), $"<size=11>{ayuda}</size>", Interfaz.Pequeno);
+        }
+
+        /// <summary>
+        /// Lo que aconsejaría el ingeniero con lo que tiene el piloto alrededor: de lo urgente
+        /// (coche de seguridad, compañero delante, DRS, alguien encima) a lo tranquilo (va solo).
+        /// </summary>
+        string Consejo(int i, (float delante, float detras, int quienDelante, int quienDetras) hu)
+        {
+            var co = carrera.Coches[i];
+            string N(int k) => carrera.Coches[k].piloto.corto;
+            bool ultima = co.vueltas >= carrera.Vueltas - 1;
+            float gastadas = Mathf.Clamp(co.desgaste * 33f, 0f, 99f);
+            if (carrera.CocheSeguridadEnPista) return "Coche de seguridad: no se adelanta. Ahorra gomas y motor para la relanzada.";
+            if (hu.quienDelante >= 0 && hu.delante < 1f && carrera.Coches[hu.quienDelante].equipo.id == co.equipo.id)
+                return $"Delante va tu compañero ({N(hu.quienDelante)}). Si atacas, os jugáis el puesto entre vosotros; si no quieres, pulsa «Manda».";
+            if (hu.quienDelante >= 0 && hu.delante < 1f)
+                return gastadas < 75f || ultima
+                    ? $"Ataca: tiene DRS sobre {N(hu.quienDelante)}{(ultima ? " y es la última vuelta" : "")}."
+                    : $"Tiene a {N(hu.quienDelante)} cerca, pero con las gomas al {gastadas:F0} % atacar es arriesgado; mejor en la última vuelta.";
+            if (hu.quienDetras >= 0 && hu.detras < 1f)
+                return $"Defiende: {N(hu.quienDetras)} está a {hu.detras:F1} s{(ultima ? " en la última vuelta" : "")}.";
+            if (ultima && hu.delante < 2.5f) return "Última vuelta y el de delante no está lejos: si quieres ese puesto, Ataca ahora.";
+            if (hu.delante > 2f && hu.detras > 2f) return "Va solo (a más de 2 s de todos): Ahorra; no pierde puestos y cuida gomas y motor.";
+            if (gastadas > 80f) return "Gomas muy gastadas: Ahorra para que no se caigan del todo.";
+            return "Nada urgente: Normal.";
+        }
+
+        /// <summary>Lo que hace la orden, en cifras que se entienden (segundos por vuelta en este circuito).</summary>
+        string Efecto(Carrera.OrdenPiloto o)
+        {
+            var e = Carrera.EfectoRadio(o);
+            float s = carrera.Circuito.Referencia * Mathf.Abs(e.ritmo) / 100f;
+            string motor = enCampeonato ? " · gasta motor" : "";
+            return o switch
+            {
+                Carrera.OrdenPiloto.Atacar => $"−{s:F1} s/vuelta · ×2 intentos de adelantar · +50 % errores · gomas ×1,5{motor}",
+                Carrera.OrdenPiloto.Defender => $"−{s:F1} s/vuelta · mucho más difícil de pasar · +10 % errores",
+                Carrera.OrdenPiloto.Ahorrar => $"+{s:F1} s/vuelta · −40 % errores · gomas ×0,6{(enCampeonato ? " · cuida el motor" : "")}",
+                _ => "sin cambios",
+            };
         }
 
         static readonly string[] AyudaRadio =
